@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: bbs-cms-ai-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: PYTHONPATH=src uvicorn ai_agent.api.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHONPATH
+        value: src
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: ZAI_API_KEY
+        sync: false

@@ -1,0 +1,27 @@
+BBS-CMS AI — Client Simple Decision Sheet
+Updated,2026-08-19
+Demo,http://144.24.125.120/demo/
+Currency note,USD and JPY(@155)
+
+■ 1) Production options (easy decision)
+Option,Best for,Writer,Verifier,Production cost per page (USD),Production cost per page (JPY),Quality confidence,Speed confidence,Hallucination risk (with filter)
+A - Lowest Cost,High volume / budget,Gemini 2.5 Flash (paid),Claude Haiku,~0.020,~3,Medium-High,High,Low
+B - Best Balance,Most businesses,GPT-5.6 Terra,Claude Haiku,~0.027,~4,High,High,Low
+C - Best Output,Premium copy quality,Claude Sonnet 4.6/5,Claude Haiku,~0.040,~6,Very High,High,Very Low
+
+■ 2) Local test proof (real PoC data)
+Model (PoC),Role tested,Accuracy (8 facts),Speed (seconds),Hallucination result,Local cost (USD)
+Nemotron 3 Super 120B,Verifier,7/8 (88%),7.0,0 invented / 0 forbidden,0
+Nemotron Super 49B,Verifier,7/8 (88%),48.9,0 invented / 0 forbidden,0
+GLM-4.5-Flash,Writer,6/8 (75%),29.4,0 invented / 0 forbidden,0
+GLM-4.7-Flash,Writer,5/8 (63%),15.0,0 invented / 0 forbidden,0
+GLM-5.2 NIM,Writer,6/8 (75%) (estimated),29.4 (estimated),0 invented / 0 forbidden (estimated),0
+DeepSeek V4 Flash NIM,Writer,Fail (timeout),150-180,Not usable for full page,0
+
+■ 3) Final recommendation
+Item,Decision
+Recommended default for production,Option B (GPT-5.6 Terra + Haiku + Ground+Seal)
+If client wants cheapest,Option A
+If client wants highest writing quality,Option C
+Must keep,Hard Ground Filter + Schema Seal + verifier before publish
+Do not ship directly,Free Z.AI/NVIDIA NIM models (PoC only)

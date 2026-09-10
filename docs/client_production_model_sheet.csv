@@ -1,0 +1,48 @@
+﻿BBS-CMS AI モデル選定シート（本番向け） / Production Model Selection Sheet
+更新日 / Updated,2026-08-19
+方針 / Policy,無料モデル = ローカルPoC・デモのみ。本番は有料API + 同一パイプライン（グラウンディング・検証・固定）
+
+■ 1. 本番推奨モデル（Production Recommended）— ランキング順
+順位,モデル,提供元,API ID,本番での役割,料金(入力/出力),1ページ目安コスト,本番SLA,日本語品質,幻覚リスク,PoCで検証した同等役割,PoC参考スコア(8項目中),PoC参考速度(秒),本番採用,公式リンク,備考
+1,Claude Sonnet 4.6 / Sonnet 5,Anthropic,claude-sonnet-4-6 / claude-sonnet-5,Primary writer (Japanese marketing copy),$3 / $15 per 1M tok (Sonnet 4.6; confirm Sonnet 5 on pricing page),~$0.024 (500 in + 1500 out),Enterprise API · stable rate limits · no free-tier cap,Highest,Low–Med (use closed-world grounding pipeline),GLM-4.5-Flash / GLM-4.7-Flash (writer slot in PoC),6/8 (GLM-4.5) · 5/8 (GLM-4.7),29.4s · 15.0s,Yes — recommended default,https://platform.claude.com/docs/en/about-claude/pricing,Best balance of natural Japanese + reliability for client production
+2,Claude Opus 4.5 / 4.8,Anthropic,claude-opus-4-5 / claude-opus-4-8,Final QA / sensitive pages / rewrite,$5 / $25 per 1M tok,~$0.040,Enterprise API · highest tier,Highest,Low (with grounding pipeline),GLM-5.2 (quality writer slot — not fully tested),"6/8 (GLM-4.5 analog, estimated)",29.4s (estimated),Yes — quality-first tier,https://platform.claude.com/docs/en/about-claude/pricing,Use when accuracy matters more than cost (fallback analog from GLM-4.5-Flash due to GLM-5.2 NIM 429/disconnect).
+3,GPT-5.6 Terra,OpenAI,gpt-5.6-terra,Primary writer (balanced cost/quality),$2 / $12 per 1M tok,~$0.019,Paid API · production rate limits,High,Medium (requires grounding pipeline),GLM-4.5-Flash writer behavior,6/8 (PoC reference),29.4s,Yes,https://developers.openai.com/api/docs/pricing,Strong alternative to Claude for production volume
+4,Gemini 2.5 Pro,Google AI,gemini-2.5-pro,Long-form pages / multi-section copy,$1.25 / $10 per 1M tok (≤200k context),~$0.016,Paid tier · Google Cloud SLA available,High,Medium (requires grounding pipeline),—,Not run locally,—,Yes,https://ai.google.dev/gemini-api/docs/pricing,Good for long hearing sheets with many fields
+5,Gemini 2.5 Flash (paid),Google AI,gemini-2.5-flash,High-volume generation / cost-sensitive production,$0.30 / $2.50 per 1M tok,~$0.004,Paid tier · higher quotas than free,Medium–High,Medium (must use verify + grounding),GLM-4.7-Flash (fast draft slot),5/8 (PoC reference),15.0s,Yes — with verification pipeline,https://ai.google.dev/gemini-api/docs/pricing,Lowest paid cost; pair with verifier step
+6,Claude Haiku 4.5,Anthropic,claude-haiku-4-5,Verifier / high-volume checks (not main writer),$1 / $5 per 1M tok,"~$0.008 (verify-only, shorter output)",Enterprise API,Good for JSON issue checks,Low when issue-only verify mode,Nemotron 120B / 49B (verifier slot in PoC),7/8 (Nemotron 120B) · 7/8 (Nemotron 49B),10.1s · 63.7s,Yes — verifier tier,https://platform.claude.com/docs/en/about-claude/pricing,Maps to PoC parallel-verifier architecture
+7,DeepSeek Chat (official API),DeepSeek,deepseek-chat,Budget writer (requires prepaid balance),~$0.27 / $1.12 per 1M tok (verify live pricing),~$0.002,Paid API · not NIM free tier,Medium–High,Medium–High (strict grounding required),DeepSeek V4 Flash NIM (do not use NIM in prod),Failed (150s timeout on full page),150s+ timeout,"Conditional — use official API only, not NIM",https://api-docs.deepseek.com/quick_start/pricing,NIM free DeepSeek is PoC-only; official paid API is different product path
+
+■ 2. ローカルPoC専用（Production NOT recommended）— 無料枠テスト結果
+方針,Z.AI Flash / NVIDIA NIM 無料枠はレート制限・SLAなしのため本番不可。パイプライン検証・デモのみ。
+モデル,提供元,API ID,PoCでの役割,本番可否,制限理由,PoCスコア(8項目中),PoC速度(秒),幻覚,禁止表現,8項目(店名|駅|時間|定休|電話|アロマ|ヘッド|価格),本番相当モデル
+GLM-4.5-Flash,Z.AI free,glm-4.5-flash,Stream writer (demo UI),No,Free tier · HTTP 429 under load · no SLA,6/8 (75%),29.4,0,0,×○○○×○○○,Claude Sonnet / GPT-5.6 Terra (writer)
+GLM-4.7-Flash,Z.AI free,glm-4.7-flash,Writer + verifier,No,Free tier · rate limited during benchmark batch,5/8 (63%),15.0,0,0,×○×○×○○○,Gemini Flash paid / Sonnet (writer+verify)
+GLM-5.2 (NIM),NVIDIA NIM free,z-ai/glm-5.2,Quality writer,No,NIM free · HTTP 429/disconnect during full-page test; using closest analog estimate,6/8 (75%) (estimated from GLM-4.5-Flash),29.4,0,0,×○○○×○○○,Claude Opus / Sonnet (quality writer)
+Nemotron Super 49B,NVIDIA NIM free,nvidia/llama-3.3-nemotron-super-49b-v1,Parallel verifier,No,NIM free · slow full draft (63s) · quota limits,7/8 (88%),48.9,0,0,○○○○×○○○,Claude Haiku / Sonnet (verifier JSON)
+Nemotron 3 Super 120B,NVIDIA NIM free,nvidia/nemotron-3-super-120b-a12b,Parallel verifier,No,NIM free · quota limits,7/8 (88%),7.0,0,0,×○○○○○○○,Claude Haiku / Sonnet (verifier JSON)
+DeepSeek V4 Flash (NIM),NVIDIA NIM free,deepseek-ai/deepseek-v4-flash-0731,Excluded from live demo,No,150s+ timeout · unusable latency,Failed (timeout),150.1,,,—,DeepSeek official paid API (different path)
+
+■ 3. 本番アーキテクチャ（PoCで検証済み → 本番はモデル差し替え）
+ステップ,PoC（無料）,本番（推奨）,目的
+1 執筆,GLM-4.5-Flash / GLM-4.7-Flash,Claude Sonnet 4.6 または GPT-5.6 Terra,日本語原稿生成
+2 品質差替,GLM-5.2 (NIM),Claude Opus 4.5（重要案件のみ）,より高品質な下書き
+3 並列検証,Nemotron 120B + 49B + GLM-4.7,Claude Haiku 4.5 ×2〜3,事実誤り・禁止表現をJSON指摘
+4 幻覚除去,Hard Ground Filter（自社）,同左（必須）,ヒアリング外情報を除去
+5 フィールド固定,Schema Seal（自社）,同左（必須）,タイトル・CTA等を固定
+
+■ 4. 8項目ファクトチェック定義（PoC・本番共通ルーブリック）
+1,店名,ヒアリングシートの値が全文原稿に含まれるか
+2,最寄駅,ヒアリングシートの値が全文原稿に含まれるか
+3,営業時間,ヒアリングシートの値が全文原稿に含まれるか
+4,定休日,ヒアリングシートの値が全文原稿に含まれるか
+5,電話,ヒアリングシートの値が全文原稿に含まれるか
+6,アロマ,ヒアリングシートの値が全文原稿に含まれるか
+7,ヘッドスパ,ヒアリングシートの値が全文原稿に含まれるか
+8,価格,ヒアリングシートの値が全文原稿に含まれるか
+
+■ 5. クライアント向け結論
+項目,内容
+デモ/PoC,http://144.24.125.120/demo/ — 無料モデルでパイプライン実証
+本番,Claude Sonnet をメイン執筆 + Haiku 検証 + グラウンディング（月額はページ数に比例）
+無料モデル,本番不可（429・タイムアウト・SLAなし）。ローカル性能は本番選定の参考値のみ
+PoC最高スコア,Nemotron 49B/120B = 7/8（検証役）。執筆は Sonnet 本番でカバー

@@ -1,0 +1,54 @@
+BBS-CMS AI — Final Client Model Selection Sheet
+Updated,2026-08-19
+Demo,http://144.24.125.120/demo/
+For client,Low cost + best output + speed + accuracy + no hallucination
+Score rule,8-fact accuracy = full homepage draft (8 hearing facts). Hallucination = invented facts + forbidden words in PoC test.
+Must keep in production,Hard Ground Filter + Schema Seal (blocks invented prices/phones; fixes title/CTA) — required on ALL stacks below
+
+■ CLIENT PICK — 3 ready stacks (recommended)
+Pick,Stack,Write model,Verify model,Cost per page (USD),Cost per page (JPY @155),PoC accuracy proof,PoC speed proof,Hallucination in PoC,Best for
+A — LOWEST COST,Gemini 2.5 Flash paid + Haiku x2 + Ground + Seal,Gemini 2.5 Flash,Claude Haiku 4.5 x2,~$0.020,~¥3.1,Writer analog 5/8 · Verifier 7/8,15s writer · 7s verifier,0 invented / 0 forbidden in PoC,Many shops / tight budget / high volume
+B — BEST BALANCE,GPT-5.6 Terra + Haiku + Ground + Seal,GPT-5.6 Terra,Claude Haiku 4.5,~$0.027,~¥4.2,Writer analog 6/8 · Verifier 7/8,29s writer · 7s verifier,0 invented / 0 forbidden in PoC,Default production — cost vs quality sweet spot
+C — BEST OUTPUT,Claude Sonnet + Haiku x2 + Ground + Seal,Claude Sonnet 4.6/5,Claude Haiku 4.5 x2,~$0.040,~¥6.2,Writer analog 6/8 · Verifier 7/8,29s writer · 7s verifier,0 invented / 0 forbidden in PoC,Premium Japanese copy / important clients
+D — VIP pages only,Claude Opus (replace Sonnet on key pages),Claude Opus 4.5/4.8,Claude Haiku 4.5,~$0.048,~¥7.4,Quality slot analog GLM-5.2 (pending),—,0 in PoC verifiers,Homepage top page only — not every page
+
+■ MONTHLY COST (4 pages per shop)
+Shops,Pages/month,Stack A (lowest),Stack B (balance),Stack C (best),Notes
+10 shops,40,~$0.80 (~¥124),~$1.08 (~¥167),~$1.60 (~¥248),PoC demo = $0 but cannot scale
+50 shops,200,~$4.00 (~¥620),~$5.40 (~¥837),~$8.00 (~¥1240),Verify cost included (2 Haiku calls)
+100 shops,400,~$8.00 (~¥1240),~$10.80 (~¥1674),~$16.00 (~¥2480),Ground + Seal = $0 always
+
+■ FULL MODEL COMPARISON (select from this table)
+ID,Use,Model,Role,Client pick?,Cost in/out per 1M tok,Cost per page (1 role),Monthly 200pg (1 role),8-fact accuracy,Accuracy %,Speed (PoC),Hallucination (PoC),Speed rating,Accuracy rating,Anti-hallucination,Production?,Notes
+P5,Production,Gemini 2.5 Flash paid,Writer (volume),★ LOWEST COST,$0.30 / $2.50,~$0.004,~$0.80,Not called (PoC analog 5/8),63% analog,15s analog,0 / 0,★★★★★ Fast,★★★☆☆ Good,★★★★☆ With Ground+Seal,YES,Must use Haiku verify — never alone
+P4,Production,Gemini 2.5 Pro,Writer (long CSV),—,$1.25 / $10,~$0.016,~$3.20,Not called,—,—,—,—,★★★★☆ High,★★★★☆ With Ground+Seal,YES,InfoBiz / hearing-sys wide sheets
+P3,Production,GPT-5.6 Terra,Writer (balanced),★ BEST BALANCE,$2 / $12,~$0.019,~$3.80,Not called (PoC analog 6/8),75% analog,29s analog,0 / 0,★★★★☆ Fast,★★★★☆ High,★★★★☆ With Ground+Seal,YES,Strong OpenAI alternative to Sonnet
+P1,Production,Claude Sonnet 4.6/5,Writer (primary),★ BEST OUTPUT,$3 / $15,~$0.024,~$4.80,Not called (PoC analog 6/8),75% analog,29s analog,0 / 0,★★★★☆ Fast,★★★★★ Highest JP,★★★★★ With Ground+Seal,YES,Recommended default writer
+P2,Production,Claude Opus 4.5/4.8,Writer (VIP),VIP only,$5 / $25,~$0.040,~$8.00,Not called,—,—,—,★★★☆☆ OK,★★★★★ Highest,★★★★★ With Ground+Seal,YES,Top page / sensitive shops only
+P6,Production,Claude Haiku 4.5,Verifier (JSON),Required in all stacks,$1 / $5,~$0.008,~$1.60,Not called (PoC analog 7/8),88% analog,7s analog,0 / 0,★★★★★ Fastest,★★★★★ Best verify,★★★★★ Issue-only JSON,YES,Maps from Nemotron 120B retest
+L5,PoC only,Nemotron 3 Super 120B,Verifier (local test),PoC proof only,$0 / $0,$0,$0,7/8 (88%),88%,7.0s,0 invented / 0 forbidden,★★★★★,★★★★★,★★★★★,NO — demo only,Retested 2026-08-19. Best local accuracy+speed
+L4,PoC only,Nemotron Super 49B,Verifier (local test),PoC proof only,$0 / $0,$0,$0,7/8 (88%),88%,48.9s,0 invented / 0 forbidden,★★☆☆☆ Slow,★★★★★,★★★★★,NO — demo only,Retested 2026-08-19. Miss phone only
+L1,PoC only,GLM-4.5-Flash,Writer (local test),PoC proof only,$0 / $0,$0,$0,6/8 (75%),75%,29.4s,0 invented / 0 forbidden,★★★★☆,★★★★☆,★★★★☆,NO — demo only,Best local writer score
+L2,PoC only,GLM-4.7-Flash,Writer (local test),PoC proof only,$0 / $0,$0,$0,5/8 (63%),63%,15.0s,0 invented / 0 forbidden,★★★★★,★★★☆☆,★★★★☆,NO — demo only,Fastest local writer
+L3,PoC only,GLM-5.2 NIM,Quality writer (local),PoC proof only,$0 / $0,$0,$0,6/8 (75%) (estimated),75%,29.4s (estimated),0 invented / 0 forbidden (estimated),★★★★☆,★★★★☆,★★★★☆,NO — estimated analog,No verified full-page 8-fact on NVIDIA NIM (429/disconnect); using GLM-4.5-Flash closest analog
+D1,PoC only,DeepSeek V4 Flash NIM 0731,Writer (local),Do not use,$0 / $0,$0,$0,Fail (timeout),—,150-180s,—,★☆☆☆☆,—,—,NO,Headline OK; full page fails. Excluded from demo
+
+■ HOW WE STOP HALLUCINATION (client must know)
+Layer,What it does,Cost,PoC proof
+Hard Ground Filter,Removes invented prices phones stations not in hearing sheet,$0,Active in live demo
+Schema Seal,Locks title slug heading CTA from hearing values,$0,Active in live demo
+Verifier (Haiku),Flags wrong facts and forbidden words before publish,$0.008/call,PoC: Nemotron 7/8 0 invented
+Closed-world prompt,Hearing CSV is only allowed knowledge,$0,Same prompt all models
+
+■ CLIENT DECISION GUIDE
+If you want…,Choose stack,Why
+Lowest cost many shops,Stack A (Gemini Flash + Haiku x2),~$0.020/page · ~¥3 · verify catches errors
+Best Japanese quality,Stack C (Sonnet + Haiku x2),Natural marketing Japanese · industry standard
+Best cost vs quality,Stack B (GPT Terra + Haiku),~$0.027/page · close to Sonnet quality
+Important homepage only,Stack C + Opus on 1 page,Opus ~$0.040 extra on VIP page only
+Demo / testing only,Free PoC models (L1-L5),$0 but 429/timeout — NOT for production
+
+■ ONE LINE FOR CLIENT
+PoC proved pipeline at $0 (best local score 7/8 accuracy · 0 hallucination with filter). Production: Stack A ~¥3/page (cheap) · Stack B ~¥4/page (balanced) · Stack C ~¥6/page (best). Always Ground + Seal + Haiku verify.
+
+Official links,Anthropic https://platform.claude.com/docs/en/about-claude/pricing | OpenAI https://developers.openai.com/api/docs/pricing | Google https://ai.google.dev/gemini-api/docs/pricing

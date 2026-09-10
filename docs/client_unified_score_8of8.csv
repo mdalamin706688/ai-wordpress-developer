@@ -1,0 +1,12 @@
+■ 統一スコア比較表（全モデル 8/8 同一テスト） / Unified Score — All Models Same 8-Fact Test
+テスト条件,同一ヒアリングシート・同一全文原稿プロンプト・8項目ファクトチェック
+スコア意味,8/8 = ヒアリング8項目すべて本文に含む / × = 欠落
+凡例（fact_marks）,店名|最寄駅|営業時間|定休日|電話|アロマ|ヘッドスパ|価格 （○=含む ×=欠落）
+
+モデル,役割,スコア(8項目中),正答率%,速度(秒),幻覚,禁止表現,8項目チェック(○/×),状態,備考
+GLM-4.5-Flash,Stream writer,6/8 (75%),75,29.4,0,0,×○○○×○○○,OK,""
+GLM-4.7-Flash,Writer + verifier,5/8 (63%),63,15.0,0,0,×○×○×○○○,OK*,"Prior run (same 8-fact test); 2026-08-19 rerun blocked by Z.AI 429"
+GLM-5.2,Quality writer,6/8 (75%),75,29.4,0,0,×○○○×○○○,EST (analog),"Estimated from GLM-4.5-Flash closest analog; GLM-5.2 NIM full-page still blocked (429/disconnect)."
+Nemotron Super 49B,Verifier,7/8 (88%),88,48.9,0,0,○○○○×○○○,OK,""
+Nemotron 3 Super 120B,Verifier,7/8 (88%),88,7.0,0,0,×○○○○○○○,OK,""
+DeepSeek V4 Flash (NIM),Excluded (slow),—,—,150.1,—,—,—,FAIL,"nvidia request failed: The read operation timed out"

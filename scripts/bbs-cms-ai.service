@@ -1,0 +1,17 @@
+[Unit]
+Description=BBS-CMS AI (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+# Set WorkingDirectory / ExecStart to your install path, e.g. /opt/bbs-cms-ai
+WorkingDirectory=/opt/bbs-cms-ai
+Environment=PYTHONPATH=src
+Environment=HOST=0.0.0.0
+Environment=PORT=8765
+ExecStart=/opt/bbs-cms-ai/.venv/bin/uvicorn ai_agent.api.app:app --host 0.0.0.0 --port 8765
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

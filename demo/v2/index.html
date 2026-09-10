@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="google" content="notranslate">
+<title>BBS-CMS AI</title>
+<link rel="icon" href="/ai/v2/favicon.svg" type="image/svg+xml">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/ai/v2/styles.css?v=81">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="mark" aria-hidden="true">BBS</div>
+    <div class="brand-copy">
+      <div class="brand-title-row">
+        <strong>BBS-CMS AI</strong>
+      </div>
+      <p class="brand-tagline">Build site structure and Japanese copy from the hearing sheet</p>
+      <ol class="brand-flow" aria-label="Production flow">
+        <li>Load hearing</li>
+        <li>Plan structure</li>
+        <li>Write content</li>
+        <li>Export data</li>
+      </ol>
+    </div>
+  </div>
+</header>
+<nav class="steps" id="stepper"></nav>
+<main>
+  <div id="view"><div class="card"><p class="lead">Loading…</p></div></div>
+  <p class="msg" id="msg"></p>
+</main>
+<script src="/ai/v2/config.js?v=74"></script>
+<script src="/ai/v2/sheets.js?v=81"></script>
+<script src="/ai/v2/app.js?v=81"></script>
+</body>
+</html>

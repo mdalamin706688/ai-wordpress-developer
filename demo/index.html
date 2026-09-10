@@ -1,0 +1,2811 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="google" content="notranslate">
+<title>BBS-CMS AI</title>
+<link rel="icon" href="/ai/v2/favicon.svg" type="image/svg+xml">
+<link rel="shortcut icon" href="/favicon.ico">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #141816; --muted: #5f6b64; --line: #e2e6e3; --paper: #f3f5f2;
+    --white: #fff; --green: #1a6b4a; --green-deep: #145239; --green-soft: #e6f3ec;
+    --danger: #a33a2c; --danger-soft: #f8e9e6; --warn: #8a6a2a; --warn-soft: #f5efdf;
+    --shadow: 0 10px 30px rgba(20, 40, 30, .07); --radius: 16px;
+    --ease: cubic-bezier(.22, 1, .36, 1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--ink);
+    background:
+      radial-gradient(1200px 500px at 10% -10%, rgba(26,107,74,.09), transparent 55%),
+      radial-gradient(900px 420px at 100% 0%, rgba(90,120,100,.08), transparent 50%),
+      linear-gradient(180deg, #f7f8f5 0%, var(--paper) 40%, #eef1ee 100%);
+    font: 14.5px/1.55 "Plus Jakarta Sans", "Noto Sans JP", "Hiragino Sans", sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(255,255,255,.88); backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(226,230,227,.9); padding: 14px 24px;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  }
+  header .brand { display: flex; align-items: center; gap: 12px; }
+  header .mark {
+    width: 34px; height: 34px; border-radius: 10px;
+    background: linear-gradient(145deg, var(--green) 0%, var(--green-deep) 100%);
+    color: #fff; font-weight: 700; font-size: 12px;
+    display: grid; place-items: center; letter-spacing: .02em;
+    box-shadow: 0 6px 14px rgba(26,107,74,.28);
+  }
+  header strong { font-size: 15px; letter-spacing: -.01em; }
+  header small { color: var(--muted); display: block; margin-top: 2px; font-size: 12px; }
+  .steps {
+    display: flex; gap: 4px; flex-wrap: wrap; padding: 10px 24px;
+    background: rgba(255,255,255,.55); border-bottom: 1px solid var(--line);
+  }
+  .steps button {
+    border: 1px solid transparent; background: transparent; border-radius: 999px;
+    padding: 7px 13px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--muted);
+    transition: background .2s var(--ease), color .2s var(--ease), border-color .2s var(--ease);
+  }
+  .steps button:hover:not(:disabled) { background: #fff; border-color: var(--line); color: var(--ink); }
+  .steps button.on {
+    background: var(--green); color: #fff; border-color: var(--green);
+    box-shadow: 0 4px 12px rgba(26,107,74,.25);
+  }
+  .steps button:disabled { opacity: .38; cursor: not-allowed; }
+  .prompt-tabs { display:flex; gap:6px; margin:12px 0 10px; flex-wrap:wrap; }
+  .prompt-tabs button {
+    border:1px solid var(--line); background:#fafbfa; border-radius:999px;
+    padding:7px 14px; font:inherit; font-size:12.5px; font-weight:700; cursor:pointer; color:var(--muted);
+  }
+  .prompt-tabs button.on {
+    background:var(--green); color:#fff; border-color:var(--green);
+    box-shadow:0 4px 12px rgba(26,107,74,.22);
+  }
+  .prompt-table { width:100%; border-collapse:collapse; font-size:13px; }
+  .prompt-table th, .prompt-table td {
+    border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top;
+  }
+  .prompt-table th { background:#f3f5f2; font-size:12px; color:#3d4a43; }
+  .prompt-table .pi-web { color:var(--muted); font-size:11px; margin-top:2px; }
+  .prompt-note { margin:8px 0 0; font-size:12px; color:var(--muted); }
+  main { max-width: 1080px; margin: 0 auto; padding: 22px 24px 72px; }
+  .card {
+    background: var(--white); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 22px 24px; margin-bottom: 16px; box-shadow: var(--shadow);
+    animation: rise .35s var(--ease);
+  }
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+  }
+  h2 { margin: 0 0 6px; font-size: 20px; letter-spacing: -.02em; font-weight: 700; }
+  p.lead { margin: 0 0 16px; color: var(--muted); font-size: 13.5px; }
+  label { display: block; font-size: 12px; font-weight: 700; margin: 12px 0 6px; color: #3d4a43; }
+  input[type=text], input[type=password], textarea, select {
+    width: 100%; border: 1px solid var(--line); border-radius: 12px;
+    padding: 11px 13px; font: inherit; background: #fafbfa;
+    transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
+  }
+  input:focus, textarea:focus, select:focus {
+    outline: none; border-color: var(--green);
+    box-shadow: 0 0 0 3px rgba(26,107,74,.14); background: #fff;
+  }
+  input.invalid, input.invalid:focus {
+    border-color: var(--danger); box-shadow: 0 0 0 3px rgba(163,58,44,.12);
+  }
+  textarea { min-height: 120px; resize: vertical; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; align-items: center; }
+  .btn {
+    border: 0; border-radius: 999px; padding: 11px 18px; font: inherit; font-weight: 700;
+    cursor: pointer; background: #e8ebe9; color: var(--ink);
+    transition: transform .15s var(--ease), box-shadow .15s var(--ease), background .15s ease, opacity .15s ease;
+  }
+  .btn:hover:not(:disabled) { transform: translateY(-1px); }
+  .btn.g {
+    background: linear-gradient(180deg, #22855a 0%, var(--green) 100%);
+    color: #fff; box-shadow: 0 6px 16px rgba(26,107,74,.22);
+  }
+  .btn.g:hover:not(:disabled) { box-shadow: 0 8px 20px rgba(26,107,74,.3); }
+  .btn:disabled { opacity: .45; cursor: not-allowed; transform: none; box-shadow: none; }
+  .msg {
+    margin-top: 14px; color: var(--muted); font-size: 13px;
+    min-height: 1.2em; transition: color .15s ease;
+  }
+  .msg.ok { color: var(--green); font-weight: 600; }
+  .msg.err { color: var(--danger); font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 8px 6px; text-align: left; vertical-align: top; }
+  th { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px;
+    border-radius: 999px; background: #eee;
+  }
+  .badge.ok { background: var(--green-soft); color: var(--green); }
+  .badge.fail { background: #f8e8e5; color: var(--danger); }
+  .badge.free { background: var(--green-soft); color: var(--green); }
+  .badge.paid { background: var(--warn-soft); color: var(--warn); }
+  .badge.req { background: var(--danger-soft); color: var(--danger); }
+  .badge.saved { background: var(--green-soft); color: var(--green); }
+  .badge.role-writer {
+    background: #c2185b; color: #fff;
+    box-shadow: 0 0 0 1px rgba(194,24,91,.4);
+  }
+  .badge.role-improve {
+    background: #1d5bb8; color: #fff;
+    box-shadow: 0 0 0 1px rgba(29,91,184,.35);
+  }
+  .badge.role-verifier {
+    background: #d97706; color: #fff;
+    box-shadow: 0 0 0 1px rgba(217,119,6,.45);
+  }
+  .badge.role-unused { background: #ececec; color: #666; }
+  .picker-notes .t-writer { color: #c2185b; font-weight: 700; }
+  .picker-notes .t-improve { color: #1d5bb8; font-weight: 700; }
+  .picker-notes .t-verifier { color: #d97706; font-weight: 700; }
+  .role-td .badge { margin: 0; }
+  .pipeline-board {
+    display: grid; gap: 8px; margin: 12px 0 4px;
+    padding: 12px 14px; border-radius: 14px;
+    border: 1px solid var(--line); background: #fafbfa;
+  }
+  .pipeline-board .pb-title {
+    font-size: 11px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 2px;
+  }
+  .pipeline-board .pb-row {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    font-size: 13px;
+  }
+  .pipeline-board .pb-model { font-weight: 600; }
+  .pipeline-board .pb-status {
+    font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+    background: #eee; color: #555;
+  }
+  .pipeline-board .pb-status.ok { background: var(--green-soft); color: var(--green); }
+  .pipeline-board .pb-status.timeout,
+  .pipeline-board .pb-status.error { background: var(--danger-soft); color: var(--danger); }
+  .pipeline-board .pb-status.skipped { background: #eee; color: #777; }
+  .picker-notes {
+    margin: 0 0 14px; padding: 12px 14px; border-radius: 14px;
+    background: linear-gradient(180deg, #f4f7f5, #eef2ef);
+    border: 1px solid #e4eae6; color: var(--muted); font-size: 12.5px; line-height: 1.55;
+    display: grid; gap: 4px;
+  }
+  .picker-notes b { color: var(--ink); font-weight: 700; }
+  .gate-bar {
+    display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+    margin-top: 14px; padding: 12px 14px; border-radius: 14px;
+    border: 1px solid var(--line); background: #fafbfa;
+  }
+  .gate-bar.ok { border-color: #cfe5d8; background: var(--green-soft); }
+  .gate-bar.bad { border-color: #efd2cc; background: var(--danger-soft); }
+  .gate-bar .gate-title { font-size: 12px; font-weight: 700; margin: 0 0 2px; color: var(--ink); }
+  .gate-bar .gate-hint { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.45; }
+  .gate-bar.ok .gate-hint { color: var(--green-deep); }
+  .gate-bar.bad .gate-hint { color: var(--danger); }
+  .cred-panel {
+    margin-top: 14px; padding: 14px; border-radius: 14px;
+    border: 1px solid var(--line); background: #fafbfa;
+  }
+  .cred-panel h3 {
+    margin: 0 0 10px; font-size: 13px; font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .dropzone {
+    border: 1.5px dashed #c9d2cc; border-radius: 16px; padding: 28px 20px;
+    text-align: center; background: linear-gradient(180deg, #fcfdfc, #f4f7f5);
+    transition: border-color .2s ease, background .2s ease, box-shadow .2s ease;
+  }
+  .dropzone.drag { border-color: var(--green); background: var(--green-soft);
+    box-shadow: 0 0 0 4px rgba(26,107,74,.08); }
+  .dropzone strong { display: block; font-size: 15px; margin-bottom: 4px; }
+  .dropzone p { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .hearing-meta {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 4px;
+  }
+  .hearing-meta .cell {
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: #fafbfa;
+  }
+  .hearing-meta .k { font-size: 11px; color: var(--muted); font-weight: 700; margin-bottom: 4px; }
+  .hearing-meta .v { font-size: 14px; font-weight: 600; word-break: break-word; }
+  @media (max-width: 800px) {
+    .hearing-meta { grid-template-columns: 1fr; }
+  }
+  .row-add {
+    display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap;
+  }
+  .row-add select {
+    flex: 1; min-width: 220px; border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px; font: inherit; background: #fafafa; cursor: pointer;
+  }
+  .row-add select:focus { outline: 2px solid rgba(31,107,72,.25); border-color: var(--green); }
+  .row-add .btn { flex: 0 0 auto; align-self: stretch; border-radius: 12px; }
+  .dual-pick {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 0 0 8px;
+  }
+  .dual-pick .pick-box {
+    border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px;
+    background: linear-gradient(180deg, #fcfdfc, #f6f8f6); overflow: visible;
+  }
+  .dual-pick .pick-box h3 {
+    margin: 0 0 10px; font-size: 13px; font-weight: 700;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .mega-dd { position: relative; z-index: 5; }
+  .mega-dd.open { z-index: 50; }
+  .mega-trigger {
+    width: 100%; text-align: left; border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px; font: inherit; background: var(--white); cursor: pointer;
+    color: var(--ink); display: flex; justify-content: space-between; align-items: center;
+  }
+  .mega-trigger:hover, .mega-dd.open .mega-trigger {
+    border-color: var(--green); outline: 2px solid rgba(31,107,72,.18);
+  }
+  .mega-trigger .chev { color: var(--muted); font-size: 12px; }
+  .mega-panel {
+    display: none; position: absolute; left: 0; right: 0; top: calc(100% + 4px);
+    background: var(--white); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 12px 28px rgba(0,0,0,.1); padding: 6px; z-index: 30;
+    overflow: visible;
+  }
+  .mega-dd.open .mega-panel { display: block; }
+  .mega-co { position: relative; }
+  .mega-co-btn {
+    width: 100%; text-align: left; border: 0; background: transparent;
+    border-radius: 9px; padding: 10px 12px; font: inherit; font-weight: 600;
+    cursor: pointer; color: var(--ink); display: flex; justify-content: space-between;
+  }
+  .mega-co-btn:hover, .mega-co:hover > .mega-co-btn, .mega-co.open > .mega-co-btn {
+    background: var(--green-soft); color: var(--green);
+  }
+  .mega-co-btn .arrow {
+    color: var(--muted); font-size: 12px; transition: transform .15s ease;
+  }
+  .mega-co.open > .mega-co-btn .arrow,
+  .mega-co:hover > .mega-co-btn .arrow { color: var(--green); transform: none; }
+  /* Nested models: level with hovered company, open to the right (standard cascade). */
+  .mega-models {
+    display: none; position: absolute;
+    top: 0; bottom: auto;
+    left: calc(100% + 6px); right: auto;
+    min-width: 220px; width: max-content; max-width: 280px;
+    max-height: min(320px, 70vh); overflow-y: auto;
+    background: var(--white); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 14px 32px rgba(20, 40, 30, .14); padding: 6px; z-index: 80;
+  }
+  .mega-models::before {
+    content: ""; position: absolute; top: 0; bottom: 0; left: -8px; width: 8px;
+  }
+  .mega-co:hover > .mega-models, .mega-co.open > .mega-models { display: block; }
+  /* Paid column sits on the right — open outward left so it stays on-screen. */
+  .dual-pick .pick-box:last-child .mega-models {
+    left: auto; right: calc(100% + 6px);
+  }
+  .dual-pick .pick-box:last-child .mega-models::before {
+    left: auto; right: -8px;
+  }
+  .mega-models button {
+    width: 100%; text-align: left; border: 0; background: transparent;
+    border-radius: 9px; padding: 9px 12px; font: inherit; cursor: pointer; color: var(--ink);
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    white-space: nowrap;
+  }
+  .mega-models button:hover { background: #f3f3f3; }
+  .mega-models button.on { background: var(--green-soft); color: var(--green); font-weight: 700; }
+  .mega-models button.needs-key { color: var(--muted); font-weight: 500; }
+  .mega-models button.needs-key span { opacity: .85; }
+  .mega-models .pick-check {
+    flex: 0 0 auto; font-size: 11px; font-weight: 700; color: var(--green);
+  }
+  @media (max-width: 800px) {
+    .dual-pick { grid-template-columns: 1fr; }
+    .mega-models {
+      position: static; left: auto; right: auto; bottom: auto;
+      width: auto; min-width: 0; max-width: none;
+      box-shadow: none; border: 0; border-left: 2px solid var(--green-soft);
+      padding: 4px 0 6px 10px; margin: 0 0 4px;
+    }
+    .mega-models::before { display: none; }
+    .dual-pick .pick-box:last-child .mega-models { left: auto; right: auto; }
+  }
+  .stack-chips {
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; min-height: 28px;
+    align-items: center;
+  }
+  .stack-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 4px 8px 4px 10px; background: var(--white);
+    font-size: 12px; line-height: 1.2; color: var(--ink);
+  }
+  .stack-chip b { font-weight: 600; }
+  .stack-chip .n {
+    flex: 0 0 auto; width: 16px; height: 16px; border-radius: 50%;
+    background: var(--green-soft); color: var(--green);
+    font-size: 10px; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .stack-chip .badge { font-size: 10px; padding: 1px 6px; }
+  .stack-chip button {
+    border: 0; background: transparent; color: var(--muted); cursor: pointer;
+    font-size: 14px; line-height: 1; padding: 0 2px;
+  }
+  .stack-chip button:hover { color: var(--danger); }
+  .stack-chip .empty { color: var(--muted); font-size: 12px; border: 0; padding: 0; background: transparent; }
+  .key-slim {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .key-slim-row {
+    display: grid; grid-template-columns: 120px 1fr auto; gap: 10px; align-items: center;
+  }
+  .key-slim-row .kl {
+    font-size: 12px; font-weight: 700; color: #3d4a43;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .key-slim-row input {
+    margin: 0; padding: 10px 12px; font-size: 13px;
+  }
+  .key-ready-line {
+    margin: 8px 0 0; font-size: 12px; color: var(--muted);
+  }
+  @media (max-width: 640px) {
+    .key-slim-row { grid-template-columns: 1fr; gap: 6px; }
+  }
+  .hid { display: none !important; }
+  .studio { display: flex; flex-direction: column; gap: 14px; }
+  .draft {
+    border: 1px solid #e7e0d4; border-radius: 18px; overflow: hidden;
+    background: linear-gradient(180deg, #fffdf8 0%, #f7f1e6 100%);
+    color: var(--ink);
+    box-shadow: 0 16px 40px rgba(60, 45, 20, .08);
+  }
+  .draft-top {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 14px 18px; border-bottom: 1px solid #ebe3d6;
+    background: rgba(255,255,255,.75);
+  }
+  .draft-top strong { font-size: 14px; }
+  .draft-top small { color: var(--muted); display: block; margin-top: 2px; }
+  .draft-scroll {
+    min-height: 380px; max-height: 64vh; overflow: auto;
+    padding: 22px 22px 28px;
+  }
+  .prose-block { margin: 0 0 20px; max-width: 760px; }
+  .prose-kicker {
+    font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    color: var(--green); margin: 0 0 8px; text-transform: uppercase;
+  }
+  .prose-title {
+    font-family: "Hiragino Mincho ProN", "Noto Serif JP", "Yu Mincho", serif;
+    font-size: 28px; line-height: 1.35; margin: 0; font-weight: 600;
+  }
+  .prose-lead {
+    font-size: 16px; line-height: 1.85; color: #3a3530; margin: 0;
+  }
+  .prose-body {
+    font-size: 15.5px; line-height: 1.95; color: #2c2925; margin: 0 0 14px;
+  }
+  .prose-cta {
+    display: inline-block; margin-top: 6px; padding: 10px 18px;
+    border-radius: 999px; background: var(--green); color: #fff;
+    font-weight: 700; font-size: 14px;
+  }
+  .caret {
+    display: inline-block; width: 8px; height: 1.05em; margin-left: 2px;
+    background: var(--green); vertical-align: text-bottom;
+    animation: blink 1s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+  .sec {
+    border: 1px solid #ebe3d6; border-radius: 14px;
+    padding: 14px 16px; margin: 0 0 12px; background: #fff;
+  }
+  .sec-group {
+    margin: 18px 0 8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--green);
+  }
+  .sec-group:first-child { margin-top: 0; }
+  .sec-label {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--green); margin-bottom: 8px;
+  }
+  .sec-label .tag {
+    background: var(--green-soft); color: var(--green);
+    border-radius: 999px; padding: 2px 8px; font-size: 10px;
+  }
+  .sec-text { color: var(--ink); font-size: 14.5px; line-height: 1.8; white-space: pre-wrap; }
+  .draft-foot {
+    padding: 12px 18px; border-top: 1px solid #ebe3d6;
+    display: flex; gap: 8px; flex-wrap: wrap; color: var(--muted); font-size: 12px;
+    background: rgba(255,255,255,.7);
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 700;
+    background: #efece6; color: var(--muted);
+  }
+  .pill.write { background: var(--green-soft); color: var(--green); }
+  .pill.ok { background: var(--green-soft); color: var(--green); }
+  .pill.fail { background: #f8e8e5; color: var(--danger); }
+  .pill.wait { background: #efece6; color: var(--muted); }
+  .writing-hint { color: var(--muted); font-size: 15px; line-height: 1.7; }
+  .progress-panel {
+    min-height: 200px; display: flex; flex-direction: column;
+    align-items: stretch; justify-content: flex-start; gap: 14px; text-align: left;
+    color: var(--muted); padding: 8px 2px 4px;
+  }
+  .progress-panel strong { color: var(--ink); font-size: 16px; }
+  .run-progress {
+    margin-top: 10px; padding: 14px 16px; border-radius: 14px;
+    border: 1px solid var(--line); background: #fafbfa;
+  }
+  .run-progress-head {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+    margin-bottom: 8px;
+  }
+  .run-progress-head .rp-title { font-size: 14px; font-weight: 700; color: var(--ink); margin: 0; }
+  .run-progress-head .rp-pct {
+    font-size: 22px; font-weight: 700; color: var(--green-deep);
+    font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
+  }
+  .run-progress-bar {
+    height: 10px; border-radius: 999px; background: #e7ece9; overflow: hidden;
+  }
+  .run-progress-bar > i {
+    display: block; height: 100%; width: 0%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #1a6b4a, #2f9e6f);
+    transition: width .35s var(--ease);
+  }
+  .run-progress-meta {
+    display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    margin-top: 8px; font-size: 12.5px;
+  }
+  .run-progress-meta .rp-stage { color: var(--ink); font-weight: 600; }
+  .run-steps { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+  .run-steps li {
+    display: flex; align-items: center; gap: 10px; font-size: 13px;
+    padding: 6px 8px; border-radius: 10px;
+  }
+  .run-steps li .dot {
+    width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto;
+    background: #cfd6d2;
+  }
+  .run-steps li.done .dot { background: var(--green); }
+  .run-steps li.active .dot {
+    background: #1d5bb8;
+    box-shadow: 0 0 0 3px rgba(29,91,184,.2);
+  }
+  .run-steps li.done { color: var(--green-deep); }
+  .run-steps li.active { color: var(--ink); font-weight: 600; background: #f0f4fa; }
+  .run-steps li.pending { color: var(--muted); }
+  .run-steps li .rp-model { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 500; }
+  .spinner {
+    width: 28px; height: 28px; border-radius: 50%;
+    border: 3px solid #ebe3d6; border-top-color: var(--green);
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 800px) {
+    .grid2 { grid-template-columns: 1fr; }
+    main, header, .steps { padding-left: 14px; padding-right: 14px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">
+    <div class="mark" aria-hidden="true">BBS</div>
+    <div>
+      <strong>BBS-CMS AI</strong>
+      <small>Hearing CSV → Japanese homepage draft → WordPress sections → CSV</small>
+    </div>
+  </div>
+</header>
+<nav class="steps" id="stepper"></nav>
+<main>
+  <div id="view"><div class="card"><p class="lead">Loading…</p></div></div>
+  <p class="msg" id="msg"></p>
+</main>
+<script src="config.js"></script>
+<script>
+(function () {
+  var STEPS = [
+    { id: "config", ja: "1 Config", en: "1 Config" },
+    { id: "hearing", ja: "2 Hearing CSV", en: "2 Hearing CSV" },
+    { id: "run", ja: "3 Draft", en: "3 Draft" },
+    { id: "results", ja: "4 Sections", en: "4 Sections" },
+    { id: "export", ja: "5 Download CSV", en: "5 Download CSV" }
+  ];
+  // WordPress steps intentionally disabled for BBS-CMS AI:
+  // { id: "wp", ... }, { id: "finish", ... }
+
+  var KEY_LABELS = {
+    zai_api_key: "Z.AI",
+    nvidia_api_key: "NVIDIA NIM",
+    deepseek_api_key: "DeepSeek",
+    openai_api_key: "OpenAI",
+    anthropic_api_key: "Anthropic",
+    gemini_api_key: "Gemini (Free)",
+    gemini_paid_api_key: "Gemini (Paid)",
+    moonshot_api_key: "Moonshot (Kimi)",
+    minimax_api_key: "MiniMax",
+    qwen_api_key: "Qwen (DashScope)"
+  };
+
+  var state = {
+    step: "config",
+    max: 0,
+    config: null,
+    hearing: null,
+    hearingFile: "",
+    hearingTable: null,
+    selected: [],
+    rows: [],
+    runAt: "",
+    running: false,
+    showAdvanced: false,
+    promptPage: "top",
+    sectionsPage: "top",
+    draftKeys: {},
+    acceptedKeys: {},
+    committedSelected: null,
+    modelFilter: "all",
+    modelQuery: "",
+    lastError: "",
+    console: {
+      status: "idle", stage: "", text: "", sections: [], writer: "", meta: "",
+      progress: null
+    }
+  };
+
+  var PROVIDER_LABELS = {
+    gemini: "Gemini",
+    gemini_paid: "Gemini (Paid)",
+    zai: "Z.AI",
+    nvidia: "NVIDIA NIM",
+    deepseek: "DeepSeek",
+    openai: "OpenAI",
+    anthropic: "Anthropic",
+    moonshot: "Moonshot",
+    minimax: "MiniMax",
+    qwen: "Qwen"
+  };
+
+  function api(path) {
+    var base = String(window.DEMO_API_BASE || "").replace(/\/$/, "");
+    return base + path;
+  }
+  function esc(s) {
+    return String(s || "").replace(/[&<>"']/g, function (c) {
+      return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c];
+    });
+  }
+
+  function unescapeJsonString(s) {
+    return String(s || "")
+      .replace(/\\n/g, "\n")
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, "\\")
+      .replace(/\\u([0-9a-fA-F]{4})/g, function (_, h) {
+        return String.fromCharCode(parseInt(h, 16));
+      });
+  }
+
+  function extractJsonStringField(raw, key) {
+    var re = new RegExp('"' + key + '"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"');
+    var m = String(raw || "").match(re);
+    if (m) return unescapeJsonString(m[1]);
+    // Incomplete string still streaming
+    var open = new RegExp('"' + key + '"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)');
+    var m2 = String(raw || "").match(open);
+    return m2 ? unescapeJsonString(m2[1]) : "";
+  }
+
+  function extractLiveProse(raw) {
+    var text = String(raw || "");
+    // Strip markdown fences if model wraps JSON
+    text = text.replace(/^```json\s*/i, "").replace(/^```\s*/i, "").replace(/```\s*$/i, "");
+    var prose = {
+      title: "",
+      heading: "",
+      lead: "",
+      body: [],
+      cta: "",
+      active: "heading"
+    };
+    try {
+      var parsed = JSON.parse(text);
+      prose.title = String(parsed.title || "");
+      prose.heading = String(parsed.heading || "");
+      prose.lead = String(parsed.lead || "");
+      prose.body = Array.isArray(parsed.body_paragraphs) ? parsed.body_paragraphs.map(String) : [];
+      prose.cta = String(parsed.cta || "");
+      prose.active = "";
+      return prose;
+    } catch (e) {}
+    prose.title = extractJsonStringField(text, "title");
+    prose.heading = extractJsonStringField(text, "heading");
+    prose.lead = extractJsonStringField(text, "lead");
+    prose.cta = extractJsonStringField(text, "cta");
+    var bodies = [];
+    var arrMatch = text.match(/"body_paragraphs"\s*:\s*\[([\s\S]*)/);
+    if (arrMatch) {
+      var chunk = arrMatch[1];
+      var re = /"((?:\\.|[^"\\])*)"/g;
+      var m;
+      while ((m = re.exec(chunk))) {
+        bodies.push(unescapeJsonString(m[1]));
+        if (chunk.slice(m.index + m[0].length).trim().indexOf("]") === 0) break;
+      }
+    }
+    prose.body = bodies;
+    if (prose.cta) prose.active = "cta";
+    else if (bodies.length) prose.active = "body_" + bodies.length;
+    else if (prose.lead) prose.active = "lead";
+    else if (prose.heading) prose.active = "heading";
+    else if (prose.title) prose.active = "title";
+    else prose.active = "heading";
+    return prose;
+  }
+
+  function renderLiveProseHtml(prose, writing) {
+    if (!prose || (!prose.heading && !prose.lead && !prose.body.length && !prose.title && !prose.cta)) {
+      return '<p class="writing-hint">原稿を書き始めています…<span class="caret"></span></p>';
+    }
+    var html = "";
+    if (prose.heading || prose.title) {
+      html += '<div class="prose-block"><div class="prose-kicker">見出し</div>' +
+        '<p class="prose-title">' + esc(prose.heading || prose.title) +
+        (writing && prose.active === "heading" ? '<span class="caret"></span>' : "") +
+        "</p></div>";
+    }
+    if (prose.lead) {
+      html += '<div class="prose-block"><div class="prose-kicker">リード</div>' +
+        '<p class="prose-lead">' + esc(prose.lead) +
+        (writing && prose.active === "lead" ? '<span class="caret"></span>' : "") +
+        "</p></div>";
+    }
+    if (prose.body && prose.body.length) {
+      html += '<div class="prose-block"><div class="prose-kicker">本文</div>';
+      prose.body.forEach(function (p, idx) {
+        var active = writing && prose.active === ("body_" + (idx + 1));
+        html += '<p class="prose-body">' + esc(p) +
+          (active ? '<span class="caret"></span>' : "") + "</p>";
+      });
+      html += "</div>";
+    }
+    if (prose.cta) {
+      html += '<div class="prose-block"><div class="prose-kicker">CTA</div>' +
+        '<span class="prose-cta">' + esc(prose.cta) +
+        (writing && prose.active === "cta" ? '<span class="caret"></span>' : "") +
+        "</span></div>";
+    }
+    return html || '<p class="writing-hint">原稿を整形しています…</p>';
+  }
+
+  function msg(text, ok) {
+    var el = document.getElementById("msg");
+    if (!el) return;
+    el.className = "msg" + (ok === true ? " ok" : ok === false ? " err" : "");
+    el.textContent = text || "";
+  }
+  function clearMsg() {
+    msg("", null);
+  }
+  function pruneDraftKeysForSelection() {
+    var needed = {};
+    neededKeyFields(state.selected || []).forEach(function (k) {
+      needed[k.field] = true;
+    });
+    Object.keys(state.draftKeys || {}).forEach(function (field) {
+      if (!needed[field]) delete state.draftKeys[field];
+    });
+  }
+  function go(step, max) {
+    state.step = step;
+    if (typeof max === "number") state.max = Math.max(state.max, max);
+    draw();
+  }
+
+  function stepper() {
+    document.getElementById("stepper").innerHTML = STEPS.map(function (s, i) {
+      var disabled = i > state.max ? " disabled" : "";
+      var on = state.step === s.id ? " on" : "";
+      return '<button type="button" data-step="' + s.id + '"' + disabled + ' class="' + on.trim() + '">' + s.ja + "</button>";
+    }).join("");
+    document.querySelectorAll("[data-step]").forEach(function (b) {
+      b.onclick = function () {
+        if (b.disabled) return;
+        var target = b.getAttribute("data-step");
+        if (target !== "config") {
+          var err = configGateError(state.selected, collectPastedKeys(), "nav");
+          if (err) {
+            msg(err, false);
+            go("config", 0);
+            return;
+          }
+          if (state.step === "config" && configIsDirty()) {
+            msg("Press Save & continue to apply your Config changes.", false);
+            return;
+          }
+        }
+        state.step = target;
+        draw();
+      };
+    });
+  }
+
+  async function loadConfig() {
+    var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 15000) : null;
+    try {
+      var res = await fetch(api("/v1/lab/config"), ctrl ? { signal: ctrl.signal } : undefined);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      state.config = await res.json();
+      state.selected = (state.config.selected_models || []).slice();
+      var san = sanitizeSelectedForKeys(state.selected);
+      if (san.swaps.length) {
+        state.selected = san.selected;
+        state._lastKeySwapHint = san.swaps.map(function (s) {
+          return modelLabel(s.from) + " → " + modelLabel(s.to);
+        }).join("; ");
+      }
+      state.committedSelected = state.selected.slice();
+      // Keys already on server (.env / lab) count as accepted.
+      state.acceptedKeys = state.acceptedKeys || {};
+      Object.keys(state.config.keys || {}).forEach(function (field) {
+        if (state.config.keys[field] && state.config.keys[field].set) {
+          state.acceptedKeys[field] = true;
+        }
+      });
+      markAcceptedKeys(state.selected, {});
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  function neededKeyFields(selectedIds) {
+    var cfg = state.config || { models: [], keys: {} };
+    var byId = {};
+    (cfg.models || []).forEach(function (m) { byId[m.id] = m; });
+    var fields = [];
+    var seen = {};
+    (selectedIds || []).forEach(function (id) {
+      var m = byId[id];
+      if (!m || !m.key_field || seen[m.key_field]) return;
+      seen[m.key_field] = true;
+      fields.push({
+        field: m.key_field,
+        label: m.key_label || KEY_LABELS[m.key_field] || m.key_field,
+        ready: !!(cfg.keys[m.key_field] && cfg.keys[m.key_field].set),
+        meta: cfg.keys[m.key_field] || {},
+        paid: false
+      });
+    });
+    // Mark fields used by any paid selected model.
+    (selectedIds || []).forEach(function (id) {
+      var m = byId[id];
+      if (!m || m.pricing !== "paid" || !m.key_field) return;
+      fields.forEach(function (f) {
+        if (f.field === m.key_field) f.paid = true;
+      });
+    });
+    return fields;
+  }
+
+  function paidKeyFields(selectedIds) {
+    return neededKeyFields(selectedIds).filter(function (k) { return k.paid; });
+  }
+
+  /** Merge saved draftKeys with current DOM password inputs. */
+  function collectPastedKeys() {
+    var keys = {};
+    Object.keys(state.draftKeys || {}).forEach(function (f) {
+      var v = String(state.draftKeys[f] || "").trim();
+      if (v) keys[f] = v;
+    });
+    document.querySelectorAll("[data-key]").forEach(function (el) {
+      var v = String(el.value || "").trim();
+      var f = el.getAttribute("data-key");
+      if (!f) return;
+      if (v) keys[f] = v;
+      else delete keys[f];
+    });
+    return keys;
+  }
+
+  /** Keys that still block progress.
+   *  phase "config": need a paste OR an already-saved/.env key (ready).
+   *  phase "nav": trust server-ready keys (Hearing / Draft / Run).
+   *  Free and paid both accept ready keys — "free" means $0, not "no key".
+   */
+  function unresolvedKeyFields(selectedIds, pastedKeys, phase) {
+    pastedKeys = pastedKeys || {};
+    phase = phase || "config";
+    return neededKeyFields(selectedIds).filter(function (k) {
+      var pasted = String(pastedKeys[k.field] || "").trim();
+      if (pasted) return false;
+      if (k.ready) return false;
+      if (phase === "config" && state.acceptedKeys && state.acceptedKeys[k.field]) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  /** Returns error string if gate fails; otherwise null.
+   *  phase: "config" (Save) | "nav" (Hearing→Draft→Run)
+   */
+  function configGateError(selectedIds, pastedKeys, phase) {
+    if (!(selectedIds || []).length) {
+      return "Select at least one model to continue.";
+    }
+    var miss = unresolvedKeyFields(selectedIds, pastedKeys, phase || "config");
+    if (miss.length) {
+      var paidMiss = miss.filter(function (k) { return k.paid; });
+      if (paidMiss.length) {
+        return "Paid model selected — paste API key for: " +
+          paidMiss.map(function (k) { return k.label; }).join(", ");
+      }
+      return "Free model still needs a free API key for: " +
+        miss.map(function (k) { return k.label; }).join(", ") +
+        ". Or pick GLM Flash / NIM (keys already in .env).";
+    }
+    return null;
+  }
+
+  function markAcceptedKeys(selectedIds, pastedKeys) {
+    state.acceptedKeys = state.acceptedKeys || {};
+    neededKeyFields(selectedIds).forEach(function (k) {
+      var pasted = pastedKeys && String(pastedKeys[k.field] || "").trim();
+      if (pasted || k.ready) state.acceptedKeys[k.field] = true;
+    });
+  }
+
+  function configIsDirty() {
+    var cur = (state.selected || []).slice();
+    var saved = state.committedSelected;
+    if (!saved) return cur.length > 0;
+    if (cur.length !== saved.length) return true;
+    for (var i = 0; i < cur.length; i++) {
+      if (cur[i] !== saved[i]) return true;
+    }
+    return Object.keys(collectPastedKeys()).length > 0;
+  }
+
+  function refreshConfigGateUi() {
+    var err = configGateError(state.selected, collectPastedKeys(), "config");
+    var btn = document.getElementById("saveConfig");
+    var bar = document.getElementById("configGateBar");
+    var hint = document.getElementById("configGateHint");
+    var title = document.getElementById("configGateTitle");
+    if (btn) {
+      btn.disabled = !!err;
+      btn.title = err || "Save models and continue";
+    }
+    if (bar) {
+      if (err) {
+        bar.className = "gate-bar bad";
+        bar.removeAttribute("aria-hidden");
+      } else {
+        bar.className = "gate-bar ok hid";
+        bar.setAttribute("aria-hidden", "true");
+      }
+    }
+    if (title) title.textContent = err ? "Cannot continue yet" : "";
+    if (hint) hint.textContent = err || "";
+    document.querySelectorAll("[data-key]").forEach(function (inp) {
+      var field = inp.getAttribute("data-key");
+      var meta = neededKeyFields(state.selected).filter(function (k) {
+        return k.field === field;
+      })[0];
+      var has = !!String(inp.value || state.draftKeys[field] || "").trim();
+      var accepted = !!(state.acceptedKeys && state.acceptedKeys[field]);
+      var must = meta && meta.paid && !accepted && !has;
+      var mustFree = meta && !meta.paid && !meta.ready && !has;
+      if (must || mustFree) inp.classList.add("invalid");
+      else inp.classList.remove("invalid");
+    });
+  }
+
+  function roleLabel(selected, idx) {
+    var n = (selected || []).length;
+    if (n === 1) return "Writer";
+    if (n === 2) return idx === 0 ? "Writer" : "Verifier";
+    if (idx === 0) return "Writer";
+    if (idx === 1) return "Improve";
+    if (idx <= 4) return "Verifier";
+    // n===1 already returned Writer above — no Verifier/Improve chips.
+    return "Unused";
+  }
+
+  function roleBadgeClass(role) {
+    var r = String(role || "").toLowerCase();
+    if (r.indexOf("writer") === 0) return "role-writer";
+    if (r.indexOf("improve") === 0) return "role-improve";
+    if (r.indexOf("verifier") === 0) return "role-verifier";
+    return "role-unused";
+  }
+
+  function roleBadgeHtml(role) {
+    return '<span class="badge ' + roleBadgeClass(role) + '">' + esc(role) + "</span>";
+  }
+
+  function statusLabel(st) {
+    var s = String(st || "").toLowerCase();
+    if (s === "ok") return "used";
+    if (s === "timeout") return "timed out";
+    if (s === "error") return "failed";
+    if (s === "skipped") return "skipped";
+    return s || "—";
+  }
+
+  function skipReasonLabel(reason) {
+    var r = String(reason || "");
+    if (r === "gemini_self_verify_disabled") {
+      return "skipped (Gemini self-verify off — uses ground filter only)";
+    }
+    return "skipped";
+  }
+
+  /** Runtime verify list — empty for 1-model (writer-only; ground still runs). */
+  function runtimeVerifyIds(selected) {
+    return (pipelinePreview(selected || []).verify) || [];
+  }
+
+  /**
+   * Dynamic pipeline board from this run only.
+   * Shows Writer / Improve / Verifier solely when that role was in the selection
+   * and participated (or attempted) — never static demo rows.
+   */
+  function pipelineBoardHtml(row, fallbackSelected) {
+    row = row || {};
+    var roles = row.roles || (row.architecture && row.architecture.roles) || null;
+    var selected = fallbackSelected || state.selected || [];
+    var planned = pipelinePreview(selected);
+    var lines = [];
+
+    function push(badge, modelId, status, durationMs, reason) {
+      if (!modelId) return;
+      var st = String(status || "ok").toLowerCase();
+      // Hide idle skips; show intentional skips with a real reason (no fake "used").
+      if (st === "skipped" && !reason) return;
+      var dur = "";
+      if (typeof durationMs === "number" && durationMs >= 0 && st !== "skipped") {
+        var sec = Math.round(durationMs / 100) / 10;
+        dur = " · " + sec + "s";
+      }
+      var statusText = st === "skipped" ? skipReasonLabel(reason) : (statusLabel(st) + dur);
+      lines.push(
+        '<div class="pb-row">' + roleBadgeHtml(badge) +
+        '<span class="pb-model">' + esc(modelLabel(modelId)) + "</span>" +
+        '<span class="pb-status ' + esc(st) + '">' + esc(statusText) + "</span>" +
+        "</div>"
+      );
+    }
+
+    if (roles && (roles.writer || roles.improve || (roles.verifiers && roles.verifiers.length))) {
+      // Prefer authoritative run result from the API.
+      if (roles.writer && roles.writer.model) {
+        push("Writer", roles.writer.model, roles.writer.status || "ok", roles.writer.duration_ms);
+      }
+      if (roles.improve && roles.improve.model) {
+        push("Improve", roles.improve.model, roles.improve.status || "ok", roles.improve.duration_ms);
+      }
+      (roles.verifiers || []).forEach(function (v, i) {
+        if (!v || !v.model) return;
+        var label = (roles.verifiers.length > 1) ? ("Verifier #" + (i + 1)) : "Verifier";
+        push(label, v.model, v.status || "ok", v.duration_ms, v.reason);
+      });
+    } else {
+      // Fallback if older rows lack roles: only models that actually ran.
+      var sw = row.stream_writer || row.model || "";
+      var qw = row.quality_writer || "";
+      var vs = row.verifiers || [];
+      if (sw) push("Writer", sw, "ok", null);
+      if (qw) push("Improve", qw, "ok", null);
+      vs.forEach(function (id, i) {
+        var label = (vs.length > 1) ? ("Verifier #" + (i + 1)) : "Verifier";
+        push(label, id, "ok", null);
+      });
+      // Last resort: selection plan for this session (still dynamic, not hard-coded).
+      if (!lines.length) {
+        if (planned.writer) push("Writer", planned.writer, "ok", null);
+        if (planned.polish) push("Improve", planned.polish, "ok", null);
+        (planned.verify || []).forEach(function (id, i) {
+          var label = (planned.verify.length > 1) ? ("Verifier #" + (i + 1)) : "Verifier";
+          push(label, id, "ok", null);
+        });
+      }
+    }
+
+    if (!lines.length) return "";
+    return '<div class="pipeline-board">' +
+      '<p class="pb-title">Pipeline this run</p>' +
+      lines.join("") +
+      "</div>";
+  }
+
+  /** Live planned roles while a run is in progress (from current selection only). */
+  function plannedPipelineBoardHtml(selected) {
+    var planned = pipelinePreview(selected || []);
+    var lines = [];
+    function push(badge, id) {
+      if (!id) return;
+      lines.push(
+        '<div class="pb-row">' + roleBadgeHtml(badge) +
+        '<span class="pb-model">' + esc(modelLabel(id)) + "</span>" +
+        '<span class="pb-status">running</span></div>'
+      );
+    }
+    if (planned.writer) push("Writer", planned.writer);
+    if (planned.polish) push("Improve", planned.polish);
+    (runtimeVerifyIds(selected) || []).forEach(function (id, i) {
+      var list = runtimeVerifyIds(selected);
+      var label = (list.length > 1) ? ("Verifier #" + (i + 1)) : "Verifier";
+      push(label, id);
+    });
+    if (!lines.length) return "";
+    return '<div class="pipeline-board">' +
+      '<p class="pb-title">Running pipeline</p>' +
+      lines.join("") +
+      "</div>";
+  }
+
+  /** Dynamic production steps from selection — drives % progress. */
+  function buildRunSteps(selected, startEv) {
+    var planned = pipelinePreview(selected || []);
+    var writer = (startEv && startEv.writer) || planned.writer || "";
+    var polish = (startEv && startEv.quality_writer) || planned.polish || "";
+    var verifiers = (startEv && startEv.verifiers) || planned.verify || [];
+    var steps = [];
+    if (writer) {
+      steps.push({
+        id: "write",
+        label: "Writer drafting",
+        model: modelLabel(writer) || writer,
+        weight: polish ? 40 : (verifiers.length ? 55 : 85)
+      });
+    }
+    if (polish) {
+      steps.push({
+        id: "improve",
+        label: "Improve polishing",
+        model: modelLabel(polish) || polish,
+        weight: 25
+      });
+    }
+    if (verifiers.length) {
+      steps.push({
+        id: "verify",
+        label: verifiers.length > 1 ? "Verifiers checking" : "Verifier checking",
+        model: verifiers.map(function (id) { return modelLabel(id) || id; }).join(", "),
+        weight: polish ? 25 : 30
+      });
+    }
+    steps.push({ id: "ground", label: "Ground & seal", model: "", weight: 10 });
+    // Normalize weights to 100
+    var sum = steps.reduce(function (a, s) { return a + s.weight; }, 0) || 1;
+    steps.forEach(function (s) { s.weight = Math.round((s.weight / sum) * 1000) / 10; });
+    return steps;
+  }
+
+  function stageToStepId(stageId) {
+    var id = String(stageId || "");
+    if (id === "quality_swap") return "improve";
+    if (id === "write" || id === "improve" || id === "verify" || id === "ground") return id;
+    return id;
+  }
+
+  function initRunProgress(selected, startEv) {
+    var steps = buildRunSteps(selected, startEv);
+    var now = Date.now();
+    state.console.progress = {
+      steps: steps,
+      stepId: steps[0] ? steps[0].id : "write",
+      pct: 1,
+      within: 0.02,
+      tokenWithin: 0,
+      label: steps[0] ? steps[0].label : "Starting",
+      startedAt: now,
+      stepStartedAt: now,
+      tokenChars: 0,
+      lastServerPct: 0
+    };
+  }
+
+  /** Expected stage duration (sec) — refined live from token throughput. */
+  function stageTauSec(prog) {
+    var id = prog.stepId || "write";
+    var base = { write: 70, improve: 55, verify: 30, ground: 5 }[id] || 40;
+    if (id === "write" && prog.tokenChars > 120) {
+      var elapsed = Math.max(1, (Date.now() - (prog.stepStartedAt || prog.startedAt)) / 1000);
+      var cps = prog.tokenChars / elapsed;
+      // Typical sealed JP draft JSON ~1.4k–2.2k chars
+      var eta = 1800 / Math.max(cps, 0.15);
+      base = Math.max(25, Math.min(120, eta * 0.55));
+    }
+    return base;
+  }
+
+  function refreshWithinFromReality(prog) {
+    if (!prog || prog.stepId === "done") return;
+    var tokenChars = Number(prog.tokenChars) || 0;
+    var tokenWithin = Math.max(0, Math.min(0.88, Number(prog.tokenWithin) || 0));
+    var serverWithin = 0;
+    if (prog.lastServerPct && prog.steps && prog.steps.length) {
+      var before = 0;
+      var cur = 0;
+      for (var i = 0; i < prog.steps.length; i++) {
+        if (prog.steps[i].id === prog.stepId) {
+          cur = prog.steps[i].weight;
+          break;
+        }
+        before += prog.steps[i].weight;
+      }
+      if (cur > 0) {
+        serverWithin = Math.max(0, Math.min(0.92, (prog.lastServerPct - before) / cur));
+      }
+    }
+    // Writer / Verifier TTFB: do not invent % from wall-clock while zero tokens arrived.
+    if ((prog.stepId === "write" || prog.stepId === "verify") && tokenChars <= 0) {
+      prog.within = Math.min(Number(prog.within) || 0.04, 0.04);
+      return;
+    }
+    // Improve: hold until stage completes (no stream yet).
+    if (prog.stepId === "improve") {
+      prog.within = Math.max(0.04, Math.min(Number(prog.within) || 0.04, 0.08));
+      if (serverWithin > 0) prog.within = Math.max(prog.within, Math.min(0.08, serverWithin));
+      return;
+    }
+    // Writer / Verifier with real tokens: fill from chars (+ server char-based pct).
+    if (prog.stepId === "write" || prog.stepId === "verify") {
+      prog.within = Math.max(prog.within || 0, tokenWithin, serverWithin);
+      return;
+    }
+    // Ground / other: small honest hold until done.
+    prog.within = Math.max(prog.within || 0.04, serverWithin);
+  }
+
+  function computeProgressPct(prog) {
+    if (!prog || !prog.steps || !prog.steps.length) return 0;
+    if (prog.stepId === "done") return 100;
+    refreshWithinFromReality(prog);
+    var steps = prog.steps;
+    var idx = 0;
+    for (var i = 0; i < steps.length; i++) {
+      if (steps[i].id === prog.stepId) { idx = i; break; }
+      idx = i;
+    }
+    var before = 0;
+    for (var j = 0; j < idx; j++) before += steps[j].weight;
+    var cur = steps[idx] ? steps[idx].weight : 0;
+    var within = Math.max(0, Math.min(0.92, Number(prog.within) || 0));
+    var pct = before + cur * within;
+    return Math.max(1, Math.min(99, Math.round(pct)));
+  }
+
+  function setProgressStage(stageId, label) {
+    var prog = state.console.progress;
+    if (!prog || !prog.steps || !prog.steps.length) {
+      initRunProgress(state.selected, null);
+      prog = state.console.progress;
+    }
+    var sid = stageToStepId(stageId);
+    var prev = prog.stepId;
+    if (String(stageId) === "quality_swap") {
+      prog.stepId = "improve";
+      prog.within = Math.max(prog.within || 0, 0.95);
+      prog.tokenWithin = Math.max(prog.tokenWithin || 0, 0.95);
+      prog.label = label || "Improve complete";
+    } else {
+      var known = prog.steps.some(function (s) { return s.id === sid; });
+      if (known) {
+        if (sid !== prev) {
+          prog.stepId = sid;
+          prog.stepStartedAt = Date.now();
+          prog.within = 0.04;
+          prog.tokenWithin = 0;
+          prog.tokenChars = sid === "write" ? prog.tokenChars : 0;
+        }
+        prog.label = label || (prog.steps.filter(function (s) { return s.id === sid; })[0] || {}).label || sid;
+      }
+    }
+    prog.pct = computeProgressPct(prog);
+    state.console.stage = prog.label;
+  }
+
+  function bumpWriteProgress(tokenText) {
+    var prog = state.console.progress;
+    if (!prog || prog.stepId !== "write") return;
+    prog.tokenChars = (prog.tokenChars || 0) + String(tokenText || "").length;
+    // Live estimate from output size (real chars, not a fixed demo curve).
+    var target = Math.max(900, Math.min(2800, (prog.tokenChars < 400 ? 1600 : prog.tokenChars * 1.35)));
+    prog.tokenWithin = Math.min(0.88, prog.tokenChars / target);
+    prog.within = Math.max(prog.within || 0, prog.tokenWithin);
+    prog.pct = computeProgressPct(prog);
+    prog.label = "Writer drafting · " + prog.tokenChars + " chars";
+    patchProgressUi();
+  }
+
+  function applyServerProgress(pct, chars, waitingFirst) {
+    var prog = state.console.progress;
+    if (!prog) return;
+    var onStreamStage = prog.stepId === "write" || prog.stepId === "verify";
+    // Ignore server % while still waiting for first output (label/elapsed only).
+    if (waitingFirst || (onStreamStage && !(prog.tokenChars > 0) && !(chars > 0))) {
+      if (typeof chars === "number" && chars > 0) {
+        prog.tokenChars = chars;
+      }
+      prog.pct = computeProgressPct(prog);
+      return;
+    }
+    if (typeof pct === "number") {
+      prog.lastServerPct = Math.max(prog.lastServerPct || 0, Math.min(99, Math.round(pct)));
+    }
+    if (typeof chars === "number" && chars > (prog.tokenChars || 0)) {
+      prog.tokenChars = chars;
+      // Writer drafts are long; verifier JSON is compact — scale target by stage.
+      var target = prog.stepId === "verify"
+        ? Math.max(80, Math.min(500, chars < 40 ? 280 : chars * 1.25))
+        : Math.max(900, Math.min(2800, chars < 400 ? 1600 : chars * 1.35));
+      prog.tokenWithin = Math.min(0.88, chars / target);
+    }
+    prog.pct = computeProgressPct(prog);
+  }
+
+  function finishProgress() {
+    var prog = state.console.progress;
+    if (!prog) return;
+    prog.stepId = "done";
+    prog.within = 1;
+    prog.pct = 100;
+    prog.label = "Complete";
+  }
+
+  function formatElapsed(ms) {
+    var s = Math.max(0, Math.floor((ms || 0) / 1000));
+    var m = Math.floor(s / 60);
+    var r = s % 60;
+    return m ? (m + "m " + r + "s") : (r + "s");
+  }
+
+  function runProgressHtml() {
+    var prog = (state.console && state.console.progress) || null;
+    if (!prog || !prog.steps || !prog.steps.length) {
+      initRunProgress(state.selected, null);
+      prog = state.console.progress;
+    }
+    var pct = typeof prog.pct === "number" ? prog.pct : computeProgressPct(prog);
+    prog.pct = pct;
+    var elapsed = formatElapsed(Date.now() - (prog.startedAt || Date.now()));
+    var stepId = prog.stepId;
+    var reachedDone = stepId === "done";
+    var stepsHtml = prog.steps.map(function (s) {
+      var cls = "pending";
+      if (reachedDone) cls = "done";
+      else if (s.id === stepId) cls = "active";
+      else {
+        var ids = prog.steps.map(function (x) { return x.id; });
+        if (ids.indexOf(s.id) < ids.indexOf(stepId)) cls = "done";
+      }
+      return '<li class="' + cls + '"><span class="dot" aria-hidden="true"></span>' +
+        "<span>" + esc(s.label) + "</span>" +
+        (s.model ? '<span class="rp-model">' + esc(s.model) + "</span>" : "") +
+        "</li>";
+    }).join("");
+    // modelLabel for verifier list stored as joined names already sometimes
+    return '<div class="run-progress" id="runProgress">' +
+      '<div class="run-progress-head">' +
+      '<p class="rp-title" id="runProgressTitle">' + esc(prog.label || "Running") + "</p>" +
+      '<div class="rp-pct" id="runProgressPct">' + pct + "%</div>" +
+      "</div>" +
+      '<div class="run-progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' +
+      pct + '" aria-label="Pipeline progress"><i id="runProgressFill" style="width:' + pct + '%"></i></div>' +
+      '<div class="run-progress-meta">' +
+      '<span class="rp-stage" id="runProgressStage">' + esc(prog.label || "") + "</span>" +
+      '<span id="runProgressElapsed">Elapsed ' + esc(elapsed) + "</span>" +
+      "</div>" +
+      '<ul class="run-steps" id="runProgressSteps">' + stepsHtml + "</ul>" +
+      "</div>";
+  }
+
+  function patchProgressUi() {
+    var prog = state.console && state.console.progress;
+    if (!prog) return;
+    var pct = computeProgressPct(prog);
+    prog.pct = pct;
+    var fill = document.getElementById("runProgressFill");
+    var pctEl = document.getElementById("runProgressPct");
+    var title = document.getElementById("runProgressTitle");
+    var stage = document.getElementById("runProgressStage");
+    var bar = document.querySelector(".run-progress-bar");
+    var elapsedEl = document.getElementById("runProgressElapsed");
+    if (fill) fill.style.width = pct + "%";
+    if (pctEl) pctEl.textContent = pct + "%";
+    if (title) title.textContent = prog.label || "Running";
+    if (stage) stage.textContent = prog.label || "";
+    if (bar) bar.setAttribute("aria-valuenow", String(pct));
+    if (elapsedEl) elapsedEl.textContent = "Elapsed " + formatElapsed(Date.now() - (prog.startedAt || Date.now()));
+    var list = document.getElementById("runProgressSteps");
+    if (list && prog.steps) {
+      var stepId = prog.stepId;
+      var reachedDone = stepId === "done";
+      var ids = prog.steps.map(function (x) { return x.id; });
+      var curIdx = ids.indexOf(stepId);
+      Array.prototype.forEach.call(list.children, function (li, i) {
+        var cls = "pending";
+        if (reachedDone || (curIdx >= 0 && i < curIdx)) cls = "done";
+        else if (i === curIdx) cls = "active";
+        li.className = cls;
+      });
+    }
+  }
+
+  function modelById(id) {
+    var cfg = state.config || {};
+    var found = null;
+    (cfg.models || []).forEach(function (m) {
+      if (m.id === id) found = m;
+    });
+    return found;
+  }
+
+  /** Display name only (id stays in option value / API). */
+  function modelLabel(id) {
+    var m = modelById(id) || {};
+    return m.name || id || "";
+  }
+
+  function pipelinePreview(selected) {
+    var s = selected || [];
+    if (!s.length) {
+      return { writer: "", polish: "", verify: [], unused: [], hint: "" };
+    }
+    if (s.length === 1) {
+      return {
+        writer: s[0], polish: "", verify: [], unused: [],
+        hint: modelLabel(s[0]) + " writes the page (no Improve / Verifier)."
+      };
+    }
+    if (s.length === 2) {
+      return {
+        writer: s[0], polish: "", verify: [s[1]], unused: [],
+        hint: modelLabel(s[0]) + " writes · " + modelLabel(s[1]) + " verifies."
+      };
+    }
+    var verify = s.slice(2, 5);
+    var unused = s.slice(5);
+    var hint = modelLabel(s[0]) + " writes · " + modelLabel(s[1]) + " improves · " +
+      verify.map(modelLabel).join(", ") + (verify.length === 1 ? " verifies." : " verify.");
+    if (unused.length) hint += " (extra models skipped)";
+    return { writer: s[0], polish: s[1], verify: verify, unused: unused, hint: hint };
+  }
+
+  function providerLabel(m) {
+    return PROVIDER_LABELS[m.provider] || m.key_label || m.provider || "";
+  }
+
+  /** Free = $0 list price, not "no API key". Gemini Flash still needs GEMINI_API_KEY. */
+  function modelKeyReady(m) {
+    if (!m) return false;
+    if (m.key_configured) return true;
+    var f = m.key_field;
+    if (!f) return true;
+    var cfg = state.config || { keys: {} };
+    if (cfg.keys && cfg.keys[f] && cfg.keys[f].set) return true;
+    if (String((state.draftKeys || {})[f] || "").trim()) return true;
+    return false;
+  }
+
+  var FREE_KEY_FALLBACKS = [
+    "glm-4.5-flash", "glm-4.7-flash", "nvidia-nemotron-super-49b",
+    "nvidia-minimax-m3", "nvidia-deepseek-v4-flash", "nvidia-kimi-k3",
+    "nvidia-nemotron-3-super-120b"
+  ];
+
+  function pickReadyFreeFallback(excludeIds) {
+    var cfg = state.config || { models: [] };
+    var byId = {};
+    (cfg.models || []).forEach(function (m) { byId[m.id] = m; });
+    excludeIds = excludeIds || [];
+    var i, id, m;
+    for (i = 0; i < FREE_KEY_FALLBACKS.length; i++) {
+      id = FREE_KEY_FALLBACKS[i];
+      if (excludeIds.indexOf(id) >= 0) continue;
+      m = byId[id];
+      if (m && modelKeyReady(m)) return id;
+    }
+    for (i = 0; i < (cfg.models || []).length; i++) {
+      m = cfg.models[i];
+      if (!m || excludeIds.indexOf(m.id) >= 0) continue;
+      if (m.pricing === "paid") continue;
+      if (modelKeyReady(m)) return m.id;
+    }
+    return null;
+  }
+
+  /** Replace free picks that lack a key with GLM/NIM that already have .env keys. */
+  function sanitizeSelectedForKeys(selectedIds) {
+    var cfg = state.config || { models: [] };
+    var byId = {};
+    (cfg.models || []).forEach(function (m) { byId[m.id] = m; });
+    var next = [];
+    var swaps = [];
+    (selectedIds || []).forEach(function (id) {
+      var m = byId[id];
+      if (!m) return;
+      if (modelKeyReady(m)) {
+        if (next.indexOf(id) < 0) next.push(id);
+        return;
+      }
+      // Paid without key: keep so the paste gate still asks for the paid key.
+      if (m.pricing === "paid") {
+        if (next.indexOf(id) < 0) next.push(id);
+        return;
+      }
+      var fb = pickReadyFreeFallback(next);
+      if (fb) {
+        if (next.indexOf(fb) < 0) next.push(fb);
+        swaps.push({ from: id, to: fb });
+      }
+    });
+    return { selected: next, swaps: swaps };
+  }
+
+  function filteredModels(cfg) {
+    var q = String(state.modelQuery || "").trim().toLowerCase();
+    var filter = state.modelFilter || "all";
+    return (cfg.models || []).filter(function (m) {
+      var price = m.pricing === "free" ? "free" : "paid";
+      if (filter === "free" && price !== "free") return false;
+      if (filter === "paid" && price !== "paid") return false;
+      if (!q) return true;
+      var hay = [m.name, m.id, m.provider, providerLabel(m), price].join(" ").toLowerCase();
+      return hay.indexOf(q) >= 0;
+    }).slice().sort(function (a, b) {
+      var ap = a.pricing === "free" ? 0 : 1;
+      var bp = b.pricing === "free" ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      // Newest official GLMs first within paid/free groups.
+      var ar = modelRank(a.id);
+      var br = modelRank(b.id);
+      if (ar !== br) return ar - br;
+      return String(a.name || a.id).localeCompare(String(b.name || b.id));
+    });
+  }
+
+  function modelRank(id) {
+    var order = [
+      "glm-5.3", "glm-5.2", "glm-5.1", "glm-5-turbo", "glm-5",
+      "glm-4.7-flash", "glm-4.5-flash", "nvidia-nemotron-super-49b", "nvidia-minimax-m3",
+      "kimi-k3", "minimax-m3"
+    ];
+    var i = order.indexOf(id);
+    return i >= 0 ? i : 200;
+  }
+
+  var COMPANY_ORDER = [
+    "gemini_paid", "gemini", "zai", "nvidia", "moonshot", "minimax", "qwen",
+    "deepseek", "openai", "anthropic"
+  ];
+
+  function companiesFor(list) {
+    var seen = {};
+    (list || []).forEach(function (m) {
+      if (m.provider) seen[m.provider] = true;
+    });
+    var keys = Object.keys(seen);
+    keys.sort(function (a, b) {
+      var ai = COMPANY_ORDER.indexOf(a);
+      var bi = COMPANY_ORDER.indexOf(b);
+      if (ai < 0) ai = 99;
+      if (bi < 0) bi = 99;
+      if (ai !== bi) return ai - bi;
+      return (PROVIDER_LABELS[a] || a).localeCompare(PROVIDER_LABELS[b] || b);
+    });
+    return keys;
+  }
+
+  /** Hover menu: companies first; models appear only on company hover. */
+  function hoverMenuHtml(kind, list, selected) {
+    var cos = companiesFor(list);
+    var badge = kind === "free" ? "free" : "paid";
+    var title = kind === "free" ? "Free models" : "Paid models";
+    var placeholder = kind === "free" ? "— Select free model —" : "— Select paid model —";
+    var companies = cos.map(function (p) {
+      var items = (list || []).filter(function (m) { return m.provider === p; });
+      var models = items.map(function (m) {
+        var on = selected.indexOf(m.id) >= 0;
+        var ready = modelKeyReady(m);
+        var needs = kind === "free" && !ready;
+        var label = esc(m.name || m.id) + (needs ? " · needs key → GLM/NIM" : "");
+        return '<button type="button" class="' + (on ? "on" : "") +
+          (needs ? " needs-key" : "") +
+          '" data-pick-model="' + esc(m.id) + '"' +
+          (needs ? ' title="No API key yet — will use GLM/NIM from .env instead"' : "") + ">" +
+          "<span>" + label + "</span>" +
+          (on ? '<span class="pick-check">✓</span>' : "") +
+          "</button>";
+      }).join("");
+      return '<div class="mega-co" data-company="' + esc(p) + '">' +
+        '<button type="button" class="mega-co-btn" data-company-toggle="' + esc(p) + '">' +
+        esc(PROVIDER_LABELS[p] || p) + '<span class="arrow">›</span></button>' +
+        '<div class="mega-models">' + (models || '<button type="button" disabled>No models</button>') +
+        "</div></div>";
+    }).join("");
+    return '<div class="pick-box">' +
+      '<h3><span class="badge ' + badge + '">' + badge + "</span> " + title + "</h3>" +
+      '<div class="mega-dd" data-kind="' + kind + '" id="' + kind + 'MegaDd">' +
+      '<button type="button" class="mega-trigger" data-mega-trigger="' + kind + '">' +
+      '<span>' + placeholder + '</span><span class="chev">▾</span></button>' +
+      '<div class="mega-panel">' +
+      (companies || '<div class="key-hint" style="padding:8px">No models</div>') +
+      "</div></div></div>";
+  }
+
+  var DEFAULT_PROMPT_SECTIONS = {
+    tabs: [
+      {
+        id: "top",
+        label: "TOP",
+        web_path: "/",
+        description: "Production homepage section order for WordPress drafts.",
+        items: [
+          { id: "hero", label: "Hero", web: "ファーストビュー（店名・キャッチ）", rule: "brand_name・catchcopy・CTA。ヒアリングの店名とキャッチをそのまま。" },
+          { id: "about", label: "About", web: "About / 当店について", rule: "コンセプト説明のみ。設備・効果の発明禁止。" },
+          { id: "concept", label: "Concept", web: "Concept（ポイント最大3）", rule: "concept / target / tone から最大3点。未記載の設備を足さない。" },
+          { id: "greeting", label: "Greeting", web: "ご挨拶 / スタッフ", rule: "スタッフ情報が無いときは書かない（省略）。発明しない。" },
+          { id: "menu", label: "Menu", web: "メニュー（料金プレビュー）", rule: "menu の name / duration / price を全件・正確に。" },
+          { id: "access", label: "Access", web: "アクセス", rule: "駅・徒歩・住所・電話・営業・定休・支払い・駐車場を省略せず。" },
+          { id: "reviews", label: "Reviews", web: "お客様の声", rule: "口コミが無いときは書かない（省略）。発明しない。" },
+          { id: "reservation", label: "Reservation", web: "ご予約", rule: "予約方法・電話・営業時間。CTA例: ご予約はこちら。" }
+        ]
+      },
+      {
+        id: "service",
+        label: "Service",
+        web_path: "/service/",
+        description: "Production service-page section order for WordPress drafts.",
+        items: [
+          { id: "hero", label: "Service intro", web: "サービス導入（見出し＋全体説明）", rule: "提供サービスの概要。ヒアリング事実のみ。効果効能の断定禁止。" },
+          { id: "services", label: "Service blocks", web: "サービス説明ブロック（メニュー各コース）", rule: "menu 各コースに1ブロック。名前を変えない。料金は原文どおり。" },
+          { id: "reservation", label: "Reservation", web: "ご予約", rule: "電話・営業時間・CTA。Menu（料金表）の役割を奪わない。" }
+        ]
+      }
+    ]
+  };
+
+  function promptSectionsCatalog() {
+    var cfg = state.config || {};
+    var fromApi = cfg.prompt_sections;
+    if (fromApi && Array.isArray(fromApi.tabs) && fromApi.tabs.length) {
+      return fromApi;
+    }
+    return DEFAULT_PROMPT_SECTIONS;
+  }
+
+  function promptSectionItemsHtml(page) {
+    var catalog = promptSectionsCatalog();
+    var tabs = catalog.tabs || [];
+    var tab = null;
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].id === page) { tab = tabs[i]; break; }
+    }
+    if (!tab) {
+      tab = tabs[0] || null;
+    }
+    if (!tab) {
+      return '<p class="prompt-note">No section rules configured.</p>';
+    }
+    var items = tab.items || [];
+    var rows = items.map(function (it, idx) {
+      return "<tr>" +
+        "<td>" + esc(String(idx + 1)) + "</td>" +
+        "<td><strong>" + esc(it.label || it.id) + "</strong><div class=\"pi-web\">" + esc(it.id || "") + "</div></td>" +
+        "<td>" + esc(it.web || "") + "</td>" +
+        "<td>" + esc(it.rule || "") + "</td>" +
+        "</tr>";
+    }).join("");
+    return '<p class="prompt-note">' + esc(tab.description || "") +
+      (tab.web_path ? " · " + esc(tab.web_path) : "") + "</p>" +
+      '<div style="overflow:auto">' +
+      '<table class="prompt-table">' +
+      "<thead><tr><th>#</th><th>Section</th><th>On the website</th><th>AI rule</th></tr></thead>" +
+      "<tbody>" + rows + "</tbody></table></div>";
+  }
+
+  function viewConfig() {
+    var cfg = state.config || { keys: {}, models: [], system_prompt: "", user_prompt_template: "" };
+    var san = sanitizeSelectedForKeys(state.selected || []);
+    if (san.swaps.length) {
+      state.selected = san.selected;
+      state._lastKeySwapHint = san.swaps.map(function (s) {
+        return modelLabel(s.from) + " → " + modelLabel(s.to);
+      }).join("; ");
+    }
+    var selected = state.selected || [];
+    var byId = {};
+    (cfg.models || []).forEach(function (m) { byId[m.id] = m; });
+    var needed = neededKeyFields(selected);
+    // Paid still needs paste; free without a key is remapped above (no Gemini paste gate).
+    var needPaste = needed.filter(function (k) { return k.paid || !k.ready; });
+    var prevFilter = state.modelFilter;
+    state.modelFilter = "free";
+    var freeList = filteredModels(cfg);
+    state.modelFilter = "paid";
+    var paidList = filteredModels(cfg);
+    state.modelFilter = prevFilter || "all";
+
+    var stack = selected.length
+      ? '<div class="stack-chips">' + selected.map(function (id, idx) {
+          var m = byId[id] || { id: id };
+          var price = m.pricing === "paid" ? "paid" : "free";
+          var role = roleLabel(selected, idx);
+          return '<span class="stack-chip">' +
+            '<span class="n">' + (idx + 1) + "</span>" +
+            "<b>" + esc(m.name || id) + "</b>" +
+            roleBadgeHtml(role) +
+            '<span class="badge ' + price + '">' + price + "</span>" +
+            '<button type="button" data-remove="' + esc(id) + '" title="Remove" aria-label="Remove">×</button>' +
+            "</span>";
+        }).join("") + "</div>"
+      : '<div class="stack-chips"><span class="empty">None selected — pick from Free or Paid</span></div>';
+
+    function keyRowHtml(k) {
+      var draft = state.draftKeys[k.field] || "";
+      var modelsForKey = (selected || []).filter(function (id) {
+        var m = byId[id];
+        return m && m.key_field === k.field;
+      }).map(function (id) { return (byId[id] && byId[id].name) || id; });
+      var forModels = modelsForKey.length ? modelsForKey.slice(0, 2).join(", ") : "";
+      var ph = "Paste " + (k.label || "provider") + " API key only";
+      var badge = k.paid
+        ? '<span class="badge req">paid key</span>'
+        : '<span class="badge req">free key needed</span>';
+      var hint = k.paid
+        ? "Paid provider key"
+        : "Free tier key (no charge) — or choose GLM/NIM which already have keys in .env";
+      return '<div class="key-slim-row" style="grid-template-columns:140px 1fr auto;align-items:start">' +
+        '<div><span class="kl">' + esc(k.label) + (k.paid ? " *" : "") + "</span>" +
+        (forModels ? '<div class="key-hint">For: ' + esc(forModels) + "</div>" : "") +
+        '<div class="key-hint">' + esc(hint) + "</div></div>" +
+        '<input type="password" data-key="' + esc(k.field) + '"' +
+        (k.paid ? ' data-paid="1"' : "") +
+        ' aria-required="true" placeholder="' + esc(ph) + '" autocomplete="off" value="' +
+        esc(draft) + '">' +
+        badge +
+        "</div>";
+    }
+
+    var keyRows = needPaste.map(keyRowHtml).join("");
+    var gateErr = configGateError(selected, Object.assign({}, state.draftKeys), "config");
+
+    return '<div class="card"><h2>Config</h2>' +
+      '<p class="lead">How many models you pick decides the jobs:</p>' +
+      '<div class="picker-notes">' +
+      '<div><b>1 model</b> — <span class="t-writer">#1</span> is <b>Writer</b> only (no Improve / Verifier; ground filter still runs).</div>' +
+      '<div><b>2 models</b> — <span class="t-writer">#1</span> is <b>Writer</b>, <span class="t-verifier">#2</span> is <b>Verifier</b>.</div>' +
+      '<div><b>3+ models</b> — <span class="t-writer">#1</span> <b>Writer</b>, <span class="t-improve">#2</span> <b>Improve</b> (polishes the draft), <span class="t-verifier">#3–5</span> <b>Verifier</b>.</div>' +
+      "</div>" +
+      '<div class="dual-pick">' +
+      hoverMenuHtml("free", freeList, selected) +
+      hoverMenuHtml("paid", paidList, selected) +
+      "</div>" +
+      '<label style="margin-top:14px">Selected models</label>' +
+      '<div id="selectedChips">' + stack + "</div>" +
+      (keyRows
+        ? '<div class="cred-panel"><h3>API credentials</h3>' +
+          '<div class="key-slim" id="keyInputs">' + keyRows + "</div></div>"
+        : "") +
+      (state._lastKeySwapHint
+        ? '<div class="gate-bar ok" id="configSwapBar">' +
+          '<div><p class="gate-title">Using ready free models</p>' +
+          '<p class="gate-hint">' + esc(state._lastKeySwapHint) +
+          " — Gemini Flash is free to call but still needs GEMINI_API_KEY. " +
+          "GLM/NIM keys are already in .env.</p></div></div>"
+        : "") +
+      (gateErr
+        ? '<div class="gate-bar bad" id="configGateBar">' +
+          '<div><p class="gate-title" id="configGateTitle">Cannot continue yet</p>' +
+          '<p class="gate-hint" id="configGateHint">' + esc(gateErr) + "</p></div></div>"
+        : '<div class="gate-bar ok hid" id="configGateBar" aria-hidden="true">' +
+          '<div><p class="gate-title" id="configGateTitle"></p>' +
+          '<p class="gate-hint" id="configGateHint"></p></div></div>') +
+      '<details style="margin-top:16px"' + (state.showAdvanced ? " open" : "") + ">" +
+      '<summary style="cursor:pointer;font-weight:700">Advanced: prompts</summary>' +
+      "<label>System prompt</label><textarea id=\"systemPrompt\">" + esc(cfg.system_prompt) + "</textarea>" +
+      "<label>User prompt template (use {hearing})</label><textarea id=\"userPrompt\">" + esc(cfg.user_prompt_template) + "</textarea>" +
+      '<p class="prompt-note" style="margin-top:16px">Draft writes <b>all header pages</b> from the hearing (TOP, concept, service, greeting, menu, faq, feature, access, reviews — plus blog/column listing shells). Dynamic blog/feature sub-pages are not generated. Tabs below are for viewing checklists only.</p>' +
+      '<div class="prompt-tabs" id="promptTabs">' +
+      (promptSectionsCatalog().tabs || []).map(function (t) {
+        return '<button type="button" data-prompt-page="' + esc(t.id) + '"' +
+          (state.promptPage === t.id ? ' class="on"' : "") + ">" + esc(t.label || t.id) +
+          (t.shell ? ' <span class="key-hint">(shell)</span>' : "") +
+          "</button>";
+      }).join("") +
+      "</div>" +
+      '<div id="promptSectionItems">' + promptSectionItemsHtml(state.promptPage) + "</div>" +
+      "</details>" +
+      '<div class="actions">' +
+      '<button class="btn g" id="saveConfig"' + (gateErr ? " disabled" : "") +
+      ' title="' + esc(gateErr || "Save models and continue") +
+      '">Save &amp; continue</button></div></div>';
+  }
+
+  function viewHearing() {
+    var h = state.hearing;
+    if (!h) {
+      return '<div class="card"><h2>Hearing CSV</h2>' +
+        '<p class="lead">Upload a hearing sheet. Shop name is required.</p>' +
+        '<div class="dropzone" id="hearingDrop">' +
+        "<strong>Drop CSV / JSON here</strong>" +
+        "<p>or choose a file from your computer</p>" +
+        '<label class="btn g" style="display:inline-block"><input type="file" id="hearingUp" accept=".csv,.json,.txt,.tsv" hidden>Choose file</label>' +
+        '<button class="btn" id="sampleDl" style="margin-left:8px">Sample CSV</button>' +
+        "</div></div>";
+    }
+    return '<div class="card"><h2>Hearing loaded</h2>' +
+      '<p class="lead">Confirm shop details, then continue to Draft.</p>' +
+      '<div class="hearing-meta">' +
+      '<div class="cell"><div class="k">Shop</div><div class="v">' + esc(h.business_name || "—") + "</div></div>" +
+      '<div class="cell"><div class="k">Area</div><div class="v">' + esc(h.area || "—") + "</div></div>" +
+      '<div class="cell"><div class="k">File</div><div class="v">' + esc(state.hearingFile || "—") + "</div></div>" +
+      "</div>" +
+      '<div class="actions">' +
+      '<label class="btn"><input type="file" id="hearingUp" accept=".csv,.json,.txt,.tsv" hidden>Replace file</label>' +
+      '<button class="btn g" id="toRun">Next: Draft</button></div></div>';
+  }
+
+  function viewRun() {
+    var selected = state.selected || [];
+    var pipe = pipelinePreview(selected);
+    var h = state.hearing || {};
+    var hasSections = !!(state.console.sections || []).length || !!(state.rows || []).length;
+    var canRun = !state.running && !!state.hearing && selected.length > 0;
+
+    var roleRows = "";
+    function roleModelCell(id) {
+      var m = modelById(id) || {};
+      var prov = PROVIDER_LABELS[m.provider] || m.key_label || m.provider || "";
+      return "<b>" + esc(modelLabel(id)) + "</b>" +
+        (prov ? ' <span class="key-hint">via ' + esc(prov) + "</span>" : "");
+    }
+    // Dynamic from selection only — same rules as the live pipeline.
+    if (pipe.writer) {
+      roleRows += "<tr><td class=\"role-td\">" + roleBadgeHtml("Writer") + "</td><td>" +
+        roleModelCell(pipe.writer) + "</td></tr>";
+    }
+    if (pipe.polish) {
+      roleRows += "<tr><td class=\"role-td\">" + roleBadgeHtml("Improve") + "</td><td>" +
+        roleModelCell(pipe.polish) + "</td></tr>";
+    }
+    (pipe.verify || []).forEach(function (id, i) {
+      var label = (pipe.verify.length > 1) ? ("Verifier #" + (i + 1)) : "Verifier";
+      roleRows += "<tr><td class=\"role-td\">" + roleBadgeHtml(label) + "</td><td>" +
+        roleModelCell(id) + "</td></tr>";
+    });
+
+    return '<div class="card"><h2>Draft</h2>' +
+      '<p class="lead">Confirm hearing + models, then start. Roles update from your selection.</p>' +
+      (!state.hearing
+        ? '<p class="msg err">No hearing loaded — go back to Hearing CSV.</p>'
+        : "<p><b>Shop:</b> " + esc(h.business_name || "—") +
+          (h.area ? " · <b>Area:</b> " + esc(h.area) : "") +
+          (state.hearingFile ? " · <b>File:</b> " + esc(state.hearingFile) : "") + "</p>") +
+      (selected.length
+        ? '<table style="margin-top:8px"><thead><tr><th>Role</th><th>Model</th></tr></thead><tbody>' +
+          roleRows + "</tbody></table>"
+        : '<p class="msg err">No models selected — go back to Config.</p>') +
+      '<div class="actions" style="margin-top:16px">' +
+      '<button class="btn g" id="runLab"' + (canRun ? "" : " disabled") + ">" +
+      (state.running ? "Creating…" : "Start draft") + "</button>" +
+      (hasSections && !state.running
+        ? '<button class="btn" id="toResults">View sections</button>'
+        : "") +
+      '<button class="btn" id="toHearing">Back: Hearing</button>' +
+      "</div></div>";
+  }
+
+  function filterSectionsForTab(sections, page) {
+    var tab = page || "top";
+    var wpMap = {
+      top: "home",
+      home: "home",
+      concept: "concept",
+      service: "service",
+      greeting: "greeting",
+      menu: "menu",
+      faq: "faq",
+      feature: "feature",
+      access: "access",
+      blog: "blog",
+      column: "column",
+      reviews: "reviews",
+      contact: "contact"
+    };
+    var want = wpMap[tab] || tab;
+    return (sections || []).filter(function (s) {
+      var id = String(s.id || "");
+      var wp = s.wp_page || "home";
+      if (wp === want) return true;
+      // Prefix match for checklist ids like top_hero / concept_points
+      if (tab === "top" || tab === "home") {
+        return id.indexOf("top_") === 0 || id.indexOf("home_") === 0;
+      }
+      return id.indexOf(tab + "_") === 0;
+    });
+  }
+
+  function headerSectionTabs() {
+    var catalog = promptSectionsCatalog();
+    var tabs = (catalog.tabs || []).map(function (t) {
+      return { id: t.id, label: t.label || t.id, shell: !!t.shell };
+    });
+    tabs.push({ id: "contact", label: "Contact", shell: true });
+    return tabs;
+  }
+
+  function renderSectionsHtml(sections) {
+    var lastPage = "";
+    var pageTitles = {
+      home: "TOP sections",
+      concept: "Concept page",
+      service: "Service sections",
+      greeting: "Greeting page",
+      menu: "Menu page",
+      faq: "FAQ page",
+      feature: "Feature page",
+      access: "Access page",
+      blog: "Blog listing",
+      column: "Column listing",
+      reviews: "Reviews page",
+      contact: "Contact page"
+    };
+    return (sections || []).map(function (s) {
+      var page = s.wp_page || "home";
+      var head = "";
+      if (page !== lastPage) {
+        lastPage = page;
+        head = '<div class="sec-group">' + esc(pageTitles[page] || page) + "</div>";
+      }
+      return head + '<div class="sec">' +
+        '<div class="sec-label"><span class="tag">' + esc(s.id) + "</span>" +
+        esc(s.label_ja || "") + " / " + esc(s.label_en || "") +
+        " · WP:" + esc(page) + "</div>" +
+        '<div class="sec-text">' + esc(s.text || "") + "</div></div>";
+    }).join("");
+  }
+
+  function viewResults() {
+    var selected = state.selected || [];
+    var row = (state.rows || [])[0];
+    var c = state.console || {};
+    var sections = c.sections || [];
+    if ((!sections.length || isLegacyWpSections(sections)) && row) {
+      sections = normalizeRowSections(row);
+      if (sections.length) {
+        state.console.sections = sections;
+        c.sections = sections;
+      }
+    }
+    if (!sections.length && row) sections = (row.sections || []);
+    var failed = c.status === "fail" || (row && row.ok === false);
+    var errText = state.lastError || c.stage || (row && row.error) || "Writing failed";
+    var waiting = !sections.length && !failed && (state.running || c.status === "write" || c.status === "verify");
+
+    if (waiting) {
+      return '<div class="card"><h2>WordPress sections</h2>' +
+        '<p class="lead">Production pipeline running — live progress below.</p>' +
+        runProgressHtml() +
+        "</div>";
+    }
+
+    if (failed && !sections.length) {
+      return '<div class="card"><h2>WordPress sections</h2>' +
+        '<p class="lead">生成に失敗しました。キー・課金・モデル権限を確認してください。</p>' +
+        '<div class="progress-panel" style="min-height:160px">' +
+        '<strong style="color:var(--danger)">Failed</strong>' +
+        '<p style="white-space:pre-wrap;line-height:1.5">' + esc(errText) + "</p>" +
+        '<p class="key-hint">Free options: Gemini Flash, GLM-4.5/4.7 Flash (Z.AI), MiniMax M3 (NIM), Nemotron Super 49B (NIM).</p>' +
+        "</div>" +
+        '<div class="actions">' +
+        '<button class="btn" id="toConfig">Back to Config</button>' +
+        '<button class="btn g" id="runLab"' +
+        (!state.hearing || !selected.length ? " disabled" : "") +
+        ">Retry draft</button>" +
+        "</div></div>";
+    }
+
+    if (!sections.length) {
+      return '<div class="card"><h2>WordPress sections</h2>' +
+        '<p class="lead">Open Draft and press Start draft. Finished sections appear here.</p>' +
+        '<div class="actions"><button class="btn g" id="runLab"' +
+        (!state.hearing || !selected.length ? " disabled" : "") +
+        ">原稿作成を開始</button></div></div>";
+    }
+
+    var metaLine = row
+      ? "<p>Known facts " + esc(row.facts || "") + " · " + esc(row.speed_sec) +
+        "s · complete=" + (row.complete ? "yes" : "no") + "</p>"
+      : "";
+    var board = pipelineBoardHtml(row, selected);
+    var tabs = headerSectionTabs();
+    var tab = state.sectionsPage || "top";
+    var known = {};
+    tabs.forEach(function (t) { known[t.id] = true; });
+    if (!known[tab]) tab = "top";
+    var shown = filterSectionsForTab(sections, tab);
+    var counts = {};
+    tabs.forEach(function (t) {
+      counts[t.id] = filterSectionsForTab(sections, t.id).length;
+    });
+    var activeMeta = null;
+    for (var ti = 0; ti < tabs.length; ti++) {
+      if (tabs[ti].id === tab) { activeMeta = tabs[ti]; break; }
+    }
+    var tabTitle = (activeMeta && activeMeta.label) ? activeMeta.label + " ページ" : tab;
+    var tabHint = "Static header page sections for WordPress drafts (no dynamic blog/feature sub-pages)";
+
+    return '<div class="card"><h2>WordPress sections</h2>' +
+      '<p class="lead">完成した WordPress セクションです。ヘッダー各ページをタブで切り替え（ブログ個別記事は対象外）。</p>' +
+      board +
+      metaLine +
+      '<div class="actions">' +
+      '<button class="btn" id="runLab"' +
+      (!state.hearing || !selected.length ? " disabled" : "") + ">再生成</button>" +
+      '<button class="btn g" id="toExport">Next: Download CSV</button>' +
+      "</div></div>" +
+      '<div class="draft" id="draftConsole">' +
+      '<div class="draft-top"><div><strong>' + esc(tabTitle) + "</strong>" +
+      "<small>" + esc(tabHint) + "</small></div>" +
+      '<span class="pill ok">完成</span></div>' +
+      '<div class="prompt-tabs" id="sectionsTabs" style="padding:10px 18px 0;flex-wrap:wrap">' +
+      tabs.map(function (t) {
+        return '<button type="button" data-sections-page="' + esc(t.id) + '"' +
+          (tab === t.id ? ' class="on"' : "") + ">" + esc(t.label) +
+          ' <span class="key-hint">(' + (counts[t.id] || 0) + ")</span></button>";
+      }).join("") +
+      "</div>" +
+      '<div class="draft-scroll" id="draftScroll">' +
+      (shown.length
+        ? renderSectionsHtml(shown)
+        : '<p class="lead" style="padding:8px 0">No sections in this tab yet. Press 再生成.</p>') +
+      "</div>" +
+      '<div class="draft-foot" id="draftFoot"><span>セクション完成 · ' +
+      esc(tab) + " · " + sections.length + " total</span></div>" +
+      "</div>";
+  }
+
+  function viewExport() {
+    var sections = ((state.rows || [])[0] && (state.rows || [])[0].sections) || state.console.sections || [];
+    var n = sections.length;
+    return '<div class="card"><h2>Download CSV</h2>' +
+      '<p class="lead">WordPress-only CSV: field · label · wp_page · content</p>' +
+      "<p>Sections ready: <b>" + n + "</b></p>" +
+      '<div class="actions">' +
+      '<button class="btn" id="toResults">Back to Sections</button>' +
+      '<button class="btn g" id="downloadCsv"' + (n ? "" : " disabled") + ">Download CSV</button>" +
+      '</div></div>';
+  }
+
+  function draw() {
+    stepper();
+    document.getElementById("view").innerHTML = {
+      config: viewConfig,
+      hearing: viewHearing,
+      run: viewRun,
+      results: viewResults,
+      export: viewExport
+    }[state.step]();
+
+    var save = document.getElementById("saveConfig");
+    if (save) save.onclick = saveConfig;
+    var promptTabs = document.getElementById("promptTabs");
+    if (promptTabs) {
+      promptTabs.querySelectorAll("[data-prompt-page]").forEach(function (btn) {
+        btn.onclick = function () {
+          state.promptPage = btn.getAttribute("data-prompt-page") || "top";
+          state.showAdvanced = true;
+          draw();
+        };
+      });
+    }
+    var sectionsTabs = document.getElementById("sectionsTabs");
+    if (sectionsTabs) {
+      sectionsTabs.querySelectorAll("[data-sections-page]").forEach(function (btn) {
+        btn.onclick = function () {
+          state.sectionsPage = btn.getAttribute("data-sections-page") || "top";
+          draw();
+        };
+      });
+    }
+    var adv = document.querySelector("details summary");
+    if (adv && adv.parentElement) {
+      adv.parentElement.addEventListener("toggle", function (ev) {
+        state.showAdvanced = !!(ev.target && ev.target.open);
+      });
+    }
+    var toHearing = document.getElementById("toHearing");
+    if (toHearing) {
+      toHearing.onclick = function () {
+        // Back navigation only (Draft → Hearing). Config no longer has a bypass Next.
+        go("hearing", 1);
+      };
+    }
+    var toRun = document.getElementById("toRun");
+    if (toRun) {
+      toRun.onclick = function () {
+        var err = configGateError(state.selected, collectPastedKeys(), "nav");
+        if (err) { msg(err, false); go("config", 0); return; }
+        if (!state.hearing) { msg("Upload a hearing CSV first.", false); go("hearing", 1); return; }
+        go("run", 2);
+      };
+    }
+    var toResults = document.getElementById("toResults");
+    if (toResults) toResults.onclick = function () { go("results", 3); };
+    var toExport = document.getElementById("toExport");
+    if (toExport) toExport.onclick = function () { go("export", 4); };
+    var toConfig = document.getElementById("toConfig");
+    if (toConfig) toConfig.onclick = function () { go("config", 0); };
+    var run = document.getElementById("runLab");
+    if (run) run.onclick = runLab;
+    var up = document.getElementById("hearingUp");
+    if (up) up.onchange = function (e) {
+      var f = e.target.files && e.target.files[0];
+      if (f) uploadHearing(f).catch(function (err) { msg(err.message || "Upload failed", false); });
+      e.target.value = "";
+    };
+    var sample = document.getElementById("sampleDl");
+    if (sample) sample.onclick = function () {
+      window.location.href = api("/v1/demo/hearing-sheet.csv");
+    };
+    var addBtn = document.getElementById("toggleModel") || document.getElementById("addModel");
+    if (addBtn) addBtn.onclick = toggleModelFromSelect;
+    document.querySelectorAll("[data-mega-trigger]").forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        var kind = btn.getAttribute("data-mega-trigger");
+        var dd = document.getElementById(kind + "MegaDd");
+        document.querySelectorAll(".mega-dd.open").forEach(function (el) {
+          if (el !== dd) el.classList.remove("open");
+        });
+        if (dd) dd.classList.toggle("open");
+      };
+    });
+    document.querySelectorAll("[data-company-toggle]").forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        var row = btn.closest(".mega-co");
+        if (!row) return;
+        clearTimeout(row.__megaLeaveTimer);
+        var panel = row.parentElement;
+        if (panel) {
+          panel.querySelectorAll(".mega-co.open").forEach(function (el) {
+            if (el !== row) {
+              clearTimeout(el.__megaLeaveTimer);
+              el.classList.remove("open");
+            }
+          });
+        }
+        row.classList.toggle("open");
+      };
+    });
+    // Sticky nested open: delay close so slow moves into the flyout do not snap shut.
+    document.querySelectorAll(".mega-co").forEach(function (row) {
+      row.onmouseenter = function () {
+        clearTimeout(row.__megaLeaveTimer);
+        var panel = row.parentElement;
+        if (panel) {
+          panel.querySelectorAll(".mega-co.open").forEach(function (el) {
+            if (el !== row) {
+              clearTimeout(el.__megaLeaveTimer);
+              el.classList.remove("open");
+            }
+          });
+        }
+        row.classList.add("open");
+      };
+      row.onmouseleave = function () {
+        clearTimeout(row.__megaLeaveTimer);
+        row.__megaLeaveTimer = setTimeout(function () {
+          row.classList.remove("open");
+        }, 280);
+      };
+    });
+    document.querySelectorAll("[data-pick-model]").forEach(function (btn) {
+      btn.onclick = function (e) {
+        e.stopPropagation();
+        toggleModel(btn.getAttribute("data-pick-model"));
+      };
+    });
+    if (!window.__megaCloseBound) {
+      window.__megaCloseBound = true;
+      document.addEventListener("click", function () {
+        document.querySelectorAll(".mega-dd.open").forEach(function (el) {
+          el.classList.remove("open");
+        });
+        document.querySelectorAll(".mega-co.open").forEach(function (el) {
+          clearTimeout(el.__megaLeaveTimer);
+          el.classList.remove("open");
+        });
+      });
+    }
+    document.querySelectorAll(".mega-panel").forEach(function (panel) {
+      panel.onclick = function (e) { e.stopPropagation(); };
+    });
+    document.querySelectorAll("[data-remove]").forEach(function (b) {
+      b.onclick = function () { removeModel(b.getAttribute("data-remove")); };
+    });
+    document.querySelectorAll("[data-key]").forEach(function (inp) {
+      inp.oninput = function () {
+        state.draftKeys[inp.getAttribute("data-key")] = inp.value;
+        clearMsg();
+        refreshConfigGateUi();
+      };
+    });
+    var drop = document.getElementById("hearingDrop");
+    if (drop) {
+      ["dragenter", "dragover"].forEach(function (ev) {
+        drop.addEventListener(ev, function (e) {
+          e.preventDefault(); e.stopPropagation();
+          drop.classList.add("drag");
+        });
+      });
+      ["dragleave", "drop"].forEach(function (ev) {
+        drop.addEventListener(ev, function (e) {
+          e.preventDefault(); e.stopPropagation();
+          drop.classList.remove("drag");
+        });
+      });
+      drop.addEventListener("drop", function (e) {
+        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) uploadHearing(f).catch(function (err) { msg(err.message || "Upload failed", false); });
+      });
+    }
+    if (document.getElementById("saveConfig")) refreshConfigGateUi();
+    var csv = document.getElementById("downloadCsv");
+    if (csv) csv.onclick = downloadCsv;
+  }
+
+  function selectedModelsFromDom() {
+    return (state.selected || []).slice();
+  }
+
+  function preserveDraftKeys() {
+    document.querySelectorAll("[data-key]").forEach(function (inp) {
+      state.draftKeys[inp.getAttribute("data-key")] = inp.value;
+    });
+  }
+
+  function addModelFromSelect() {
+    toggleModelFromSelect();
+  }
+
+  function toggleModel(id) {
+    if (!id) return;
+    preserveDraftKeys();
+    var idx = state.selected.indexOf(id);
+    if (idx >= 0) {
+      state.selected.splice(idx, 1);
+      state._lastKeySwapHint = "";
+      pruneDraftKeysForSelection();
+      clearMsg();
+      draw();
+      return;
+    }
+    var cfg = state.config || { models: [] };
+    var byId = {};
+    (cfg.models || []).forEach(function (m) { byId[m.id] = m; });
+    var m = byId[id];
+    // Free model with no key (typical: Gemini) → use GLM/NIM that already has .env keys.
+    if (m && m.pricing !== "paid" && !modelKeyReady(m)) {
+      var fb = pickReadyFreeFallback(state.selected);
+      if (!fb) {
+        msg("No free model with an API key is ready. Add GEMINI_API_KEY or check .env.", false);
+        return;
+      }
+      if (state.selected.indexOf(fb) < 0) state.selected.push(fb);
+      state._lastKeySwapHint = modelLabel(id) + " → " + modelLabel(fb);
+      pruneDraftKeysForSelection();
+      msg(
+        modelLabel(id) + " needs a free API key. Using " + modelLabel(fb) +
+          " instead (key already in .env). Paste GEMINI_API_KEY to use Gemini.",
+        true
+      );
+      draw();
+      return;
+    }
+    state.selected.push(id);
+    state._lastKeySwapHint = "";
+    pruneDraftKeysForSelection();
+    clearMsg();
+    draw();
+  }
+
+  function toggleModelFromSelect() {
+    var sel = document.getElementById("modelSelect");
+    if (!sel || !sel.value) return;
+    toggleModel(sel.value);
+  }
+
+  function removeModel(id) {
+    preserveDraftKeys();
+    state.selected = (state.selected || []).filter(function (x) { return x !== id; });
+    pruneDraftKeysForSelection();
+    clearMsg();
+    draw();
+  }
+
+  async function saveConfig() {
+    var saveBtn = document.getElementById("saveConfig");
+    var prevLabel = saveBtn ? saveBtn.textContent : "";
+    try {
+      preserveDraftKeys();
+      var keys = collectPastedKeys();
+      var san = sanitizeSelectedForKeys(selectedModelsFromDom());
+      state.selected = san.selected;
+      if (san.swaps.length) {
+        state._lastKeySwapHint = san.swaps.map(function (s) {
+          return modelLabel(s.from) + " → " + modelLabel(s.to);
+        }).join("; ");
+      }
+      var gate = configGateError(state.selected, keys, "config");
+      if (gate) {
+        refreshConfigGateUi();
+        var firstBad = document.querySelector("[data-key].invalid");
+        if (firstBad) firstBad.focus();
+        throw new Error(gate);
+      }
+      if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.textContent = Object.keys(keys).length ? "Checking key…" : "Saving…";
+      }
+      var sysEl = document.getElementById("systemPrompt");
+      var userEl = document.getElementById("userPrompt");
+      var body = {
+        keys: keys,
+        selected_models: state.selected,
+        system_prompt: sysEl ? sysEl.value : ((state.config && state.config.system_prompt) || ""),
+        user_prompt_template: userEl ? userEl.value : ((state.config && state.config.user_prompt_template) || "")
+      };
+      var res = await fetch(api("/v1/lab/config"), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        var errBody = {};
+        try { errBody = await res.json(); } catch (e) {}
+        var detail = errBody.detail;
+        if (Array.isArray(detail)) {
+          detail = detail.map(function (x) {
+            return typeof x === "string" ? x : (x && x.msg) || JSON.stringify(x);
+          }).join(" ");
+        } else if (detail && typeof detail === "object") {
+          detail = JSON.stringify(detail);
+        }
+        throw new Error(detail || ("HTTP " + res.status));
+      }
+      state.config = await res.json();
+      state.selected = (state.config.selected_models || []).slice();
+      state.committedSelected = state.selected.slice();
+      markAcceptedKeys(state.selected, keys);
+      // Clear pasted drafts for keys that are now saved server-side.
+      Object.keys(keys).forEach(function (f) {
+        if (state.config.keys && state.config.keys[f] && state.config.keys[f].set) {
+          delete state.draftKeys[f];
+        }
+      });
+      go("hearing", 1);
+      msg("Config saved. Continue with Hearing CSV.", true);
+    } catch (e) {
+      msg(e.message || "Save failed", false);
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = prevLabel || "Save & continue";
+        refreshConfigGateUi();
+      }
+    }
+  }
+
+  async function readUploadText(file) {
+    var buf = await file.arrayBuffer();
+    var bytes = new Uint8Array(buf);
+    if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+      return new TextDecoder("utf-8").decode(bytes.subarray(3));
+    }
+    return new TextDecoder("utf-8").decode(bytes).replace(/^\uFEFF/, "");
+  }
+
+  async function uploadHearing(file) {
+    var text = await readUploadText(file);
+    var body = /\.json$/i.test(file.name) ? { json: JSON.parse(text) } : { csv: text };
+    if (body.json && body.json.hearing) body.json = body.json.hearing;
+    var res = await fetch(api("/v1/demo/hearing/parse"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      var err = {};
+      try { err = await res.json(); } catch (e) {}
+      throw new Error(err.detail || ("HTTP " + res.status));
+    }
+    var data = await res.json();
+    state.hearing = data.hearing;
+    state.hearingFile = file.name;
+    state.hearingTable = data.table || (data.meta && data.meta.table);
+    state.rows = [];
+    go("hearing", 1);
+    msg("Hearing loaded: " + (data.hearing.business_name || ""), true);
+  }
+
+  var progressClock = null;
+  function startProgressClock() {
+    if (progressClock) clearInterval(progressClock);
+      progressClock = setInterval(function () {
+      if (!state.running) {
+        clearInterval(progressClock);
+        progressClock = null;
+        return;
+      }
+      var prog = state.console && state.console.progress;
+      if (prog && prog.stepId !== "done") {
+        // Clock only refreshes the UI; it must not invent % (computeProgressPct freezes TTFB).
+        prog.pct = computeProgressPct(prog);
+        if (prog.stepId === "write" && prog.tokenChars) {
+          prog.label = "Writer drafting · " + prog.tokenChars + " chars";
+        } else if (prog.stepId === "verify" && prog.tokenChars) {
+          prog.label = "Verifier drafting · " + prog.tokenChars + " chars";
+        }
+        // Keep server-provided waiting/verify/improve labels (include real elapsed).
+        state.console.stage = prog.label;
+      }
+      patchProgressUi();
+    }, 500);
+  }
+  function stopProgressClock() {
+    if (progressClock) {
+      clearInterval(progressClock);
+      progressClock = null;
+    }
+  }
+
+  async function runLab() {
+    if (!state.hearing || state.running) return;
+    var gate = configGateError(state.selected, collectPastedKeys(), "nav");
+    if (gate) {
+      msg(gate, false);
+      go("config", 0);
+      return;
+    }
+    state.running = true;
+    state.rows = [];
+    state.runAt = "";
+    state.lastError = "";
+    state.console = {
+      status: "write",
+      stage: "Starting pipeline…",
+      text: "",
+      sections: [],
+      writer: (state.selected || [])[0] || "",
+      meta: "原稿作成",
+      progress: null
+    };
+    initRunProgress(state.selected, null);
+    go("results", 3);
+    msg("Pipeline running…");
+    startProgressClock();
+    try {
+      var res = await fetch(api("/v1/lab/run/stream"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          hearing: state.hearing,
+          model_ids: state.selected,
+          mode: "production",
+          page: "both",
+          use_lab_prompt: true
+        })
+      });
+      if (!res.ok || !res.body) {
+        var err = {};
+        try { err = await res.json(); } catch (e) {}
+        throw new Error(err.detail || ("HTTP " + res.status));
+      }
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buf = "";
+      while (true) {
+        var chunk = await reader.read();
+        if (chunk.done) break;
+        buf += decoder.decode(chunk.value, { stream: true });
+        var parts = buf.split("\n\n");
+        buf = parts.pop() || "";
+        for (var pi = 0; pi < parts.length; pi++) {
+          var block = parts[pi];
+          var line = block.split("\n").filter(function (l) {
+            return l.indexOf("data:") === 0;
+          }).map(function (l) { return l.slice(5).trim(); }).join("");
+          if (!line) continue;
+          var ev;
+          try { ev = JSON.parse(line); } catch (e) { continue; }
+          handleStreamEvent(ev);
+        }
+      }
+      state.max = Math.max(state.max, 3);
+      if (state.console.status === "fail" || state.lastError) {
+        go("results", 3);
+        msg(state.lastError || state.console.stage || "Writing failed", false);
+      } else if ((state.console.sections || []).length) {
+        state.max = Math.max(state.max, 4);
+        go("results", 3);
+        msg("セクション完成。", true);
+      } else if (state.rows[0] && state.rows[0].ok === false) {
+        var failMsg = state.rows[0].error || "Writing failed";
+        state.console.status = "fail";
+        state.console.stage = failMsg;
+        go("results", 3);
+        msg(failMsg, false);
+      } else {
+        go("results", 3);
+        msg("原稿処理が終わりました。", true);
+      }
+    } catch (e) {
+      state.console.status = "fail";
+      state.console.stage = e.message || "Failed";
+      msg(e.message || "Writing failed", false);
+      go("results", 3);
+    } finally {
+      stopProgressClock();
+      state.running = false;
+      draw();
+    }
+  }
+
+  function handleStreamEvent(ev) {
+    if (!ev || !ev.type) return;
+    if (ev.type === "start") {
+      state.runAt = ev.run_at || "";
+      state.console.writer = ev.writer || state.console.writer;
+      state.console.meta = "writer " + (ev.writer || "") +
+        (ev.quality_writer ? " · polish " + ev.quality_writer : "") +
+        (ev.verifiers && ev.verifiers.length ? " · verifier " + ev.verifiers.join(",") : "");
+      state.console.status = "write";
+      state.console.sections = [];
+      initRunProgress(state.selected, ev);
+      setProgressStage("write", "Writer drafting");
+      draw();
+      return;
+    }
+    if (ev.type === "model_start") {
+      state.console.status = "write";
+      state.console.text = "";
+      state.console.sections = [];
+      if (!state.console.progress) initRunProgress(state.selected, null);
+      setProgressStage("write", "Writer drafting");
+      draw();
+      return;
+    }
+    if (ev.type === "token") {
+      state.console.text = (state.console.text || "") + (ev.text || "");
+      bumpWriteProgress(ev.text || "");
+      return;
+    }
+    if (ev.type === "stage") {
+      var label =
+        ev.id === "verify" ? "Verifier checking facts" :
+        ev.id === "ground" ? "Grounding & sealing" :
+        ev.id === "improve" ? "Improve polishing draft" :
+        ev.id === "quality_swap" ? "Improve applied" :
+        ev.id === "write" ? "Writer drafting" : String(ev.id || "");
+      setProgressStage(ev.id, label);
+      if (typeof ev.progress === "number" || typeof ev.chars === "number") {
+        applyServerProgress(ev.progress, ev.chars);
+      }
+      if (ev.id === "verify" || ev.id === "ground" || ev.id === "quality_swap" || ev.id === "improve") {
+        state.console.status = "verify";
+      } else if (ev.id === "write") {
+        state.console.status = "write";
+      }
+      if (document.getElementById("runProgress")) patchProgressUi();
+      else draw();
+      return;
+    }
+    if (ev.type === "progress") {
+      // Live heartbeat — label/elapsed update always; % only from real work.
+      if (ev.stage) setProgressStage(ev.stage, ev.label || state.console.stage);
+      applyServerProgress(ev.progress, ev.chars, !!ev.waiting_first_token);
+      if (ev.label) {
+        state.console.stage = ev.label;
+        if (state.console.progress) state.console.progress.label = ev.label;
+      }
+      patchProgressUi();
+      return;
+    }
+    if (ev.type === "error") {
+      state.console.status = "fail";
+      state.console.stage = ev.message || "Failed";
+      state.lastError = ev.message || "Failed";
+      msg(ev.message || "Failed", false);
+      draw();
+      return;
+    }
+    if (ev.type === "model_done") {
+      finishProgress();
+      applyFinishedSections(ev.row || {});
+      return;
+    }
+    if (ev.type === "done") {
+      state.rows = ev.rows || [];
+      state.runAt = ev.run_at || state.runAt;
+      finishProgress();
+      if (ev.ok === false || ev.error) {
+        state.console.status = "fail";
+        state.console.stage = ev.error || state.lastError || "Failed";
+        state.lastError = ev.error || state.lastError || "";
+        msg(state.console.stage, false);
+      } else if (!(state.console.sections || []).length && state.rows[0]) {
+        applyFinishedSections(state.rows[0]);
+      }
+    }
+  }
+
+  function isLegacyWpSections(sections) {
+    var ids = (sections || []).map(function (s) { return String(s.id || ""); });
+    if (!ids.length) return true;
+    if (ids.indexOf("wp_title") >= 0 || ids.indexOf("body_1") >= 0) return true;
+    if (ids.indexOf("heading") >= 0 && ids.indexOf("top_hero") < 0) return true;
+    var hasService = ids.some(function (id) {
+      return id.indexOf("service_") === 0;
+    });
+    return !hasService;
+  }
+
+  function flattenSectionValue(value) {
+    if (value == null) return "";
+    if (typeof value === "string") return value.trim();
+    if (Array.isArray(value)) {
+      return value.map(function (item) {
+        if (item && typeof item === "object") {
+          if (item.name) {
+            return [item.name, item.duration, item.price].filter(Boolean).join(" / ");
+          }
+          if (item.heading || item.body) {
+            return [item.heading, item.body].filter(Boolean).join("\n");
+          }
+          if (item.title || item.body) {
+            return [item.title, item.body].filter(Boolean).join("：");
+          }
+          return Object.keys(item).map(function (k) { return item[k]; })
+            .filter(Boolean).join(" ");
+        }
+        return String(item || "");
+      }).filter(Boolean).join("\n");
+    }
+    if (typeof value === "object") {
+      if (value.enabled === false) {
+        return "（省略）" + String(value.reason_if_disabled || "").trim();
+      }
+      var keys = [
+        "brand_name", "catchcopy", "subcopy", "heading", "lead", "body", "cta",
+        "station", "address", "phone", "hours", "closed", "payment", "parking",
+        "method", "items", "points", "services"
+      ];
+      var lines = [];
+      var seen = {};
+      keys.forEach(function (k) {
+        if (!(k in value)) return;
+        seen[k] = true;
+        var chunk = flattenSectionValue(value[k]);
+        if (chunk) lines.push(chunk);
+      });
+      Object.keys(value).forEach(function (k) {
+        if (seen[k] || k === "enabled" || k === "reason_if_disabled" || k === "id" ||
+            k === "page" || k === "checklist" || k === "qa") return;
+        var chunk = flattenSectionValue(value[k]);
+        if (chunk) lines.push(chunk);
+      });
+      return lines.join("\n");
+    }
+    return String(value).trim();
+  }
+
+  function buildSectionsFromWordpress(wp, copy) {
+    wp = wp || {};
+    copy = copy || {};
+    var pages = {};
+    (wp.pages || []).forEach(function (p) {
+      if (p && p.id) pages[p.id] = p;
+    });
+    var home = pages.home || {};
+    var servicePage = pages.service || {};
+    var menu = pages.menu || {};
+    var access = pages.access || {};
+    var contact = pages.contact || {};
+    var bundle = wp.sections || {};
+    var top = bundle.top || (home.sections && typeof home.sections === "object" ? home.sections : {}) || {};
+    var service = bundle.service ||
+      (servicePage.sections && typeof servicePage.sections === "object" ? servicePage.sections : {}) || {};
+    var catalog = promptSectionsCatalog();
+    var topItems = ((catalog.tabs || []).filter(function (t) { return t.id === "top"; })[0] || {}).items || [];
+    var serviceItems = ((catalog.tabs || []).filter(function (t) { return t.id === "service"; })[0] || {}).items || [];
+    var out = [];
+    function push(id, wpPage, labelJa, labelEn, text) {
+      out.push({
+        id: id,
+        wp_page: wpPage,
+        label_ja: labelJa,
+        label_en: labelEn,
+        text: String(text || "")
+      });
+    }
+    push("home_title", "home", "TOP SEOタイトル", "Home title", home.title || copy.title || "");
+    push("home_slug", "home", "TOP スラッグ", "Home slug", home.slug || copy.slug || "home");
+    topItems.forEach(function (it) {
+      var sid = it.id;
+      var text = flattenSectionValue(top[sid]);
+      if (!text && (sid === "greeting" || sid === "reviews")) text = "（省略）";
+      push("top_" + sid, "home", it.web || it.label || sid, it.label || sid, text);
+    });
+    push("service_title", "service", "Service SEOタイトル", "Service title",
+      servicePage.title || service.seo_title || "");
+    push("service_slug", "service", "Service スラッグ", "Service slug",
+      servicePage.slug || "service");
+    serviceItems.forEach(function (it) {
+      var sid = it.id;
+      push("service_" + sid, "service", it.web || it.label || sid, it.label || sid,
+        flattenSectionValue(service[sid]));
+    });
+    if (menu && (menu.items || menu.lead)) {
+      var menuText = Array.isArray(menu.items)
+        ? menu.items.map(function (item) {
+            return [item.name, item.duration, item.price].filter(Boolean).join(" / ");
+          }).filter(Boolean).join("\n")
+        : String(menu.lead || "");
+      push("menu_page", "menu", "メニューページ", "Menu page", menuText);
+    }
+    if (access) {
+      var accessText = Array.isArray(access.body_paragraphs)
+        ? access.body_paragraphs.filter(Boolean).join("\n")
+        : "";
+      push("access_page", "access", "アクセスページ", "Access page", accessText);
+    }
+    if (contact) {
+      var contactText = Array.isArray(contact.body_paragraphs)
+        ? contact.body_paragraphs.filter(Boolean).join("\n")
+        : "";
+      push("contact_page", "contact", "お問い合わせページ", "Contact page", contactText);
+    }
+    if (copy.notes) push("notes", "home", "メモ", "Notes", copy.notes);
+    return out;
+  }
+
+  function normalizeRowSections(row) {
+    row = row || {};
+    var sections = row.sections || [];
+    var wp = row.wordpress || {};
+    var hasBundle = !!(wp.sections && (wp.sections.top || wp.sections.service));
+    if ((!sections.length || isLegacyWpSections(sections)) && hasBundle) {
+      sections = buildSectionsFromWordpress(wp, row.copy || {});
+      row.sections = sections;
+    }
+    return sections;
+  }
+
+  function applyFinishedSections(row) {
+    row = row || {};
+    var sections = normalizeRowSections(row);
+    if (!sections.length) {
+      state.console.status = row.ok ? "ok" : "fail";
+      state.console.stage = row.ok ? "完成" : (row.error || "Failed");
+      draw();
+      return false;
+    }
+    state.console.status = row.ok === false ? "fail" : "ok";
+    state.console.stage = "完成";
+    state.console.sections = sections.map(function (s) {
+      return {
+        id: s.id,
+        label_ja: s.label_ja,
+        label_en: s.label_en,
+        wp_page: s.wp_page,
+        text: s.text || ""
+      };
+    });
+    // Keep row in sync so CSV download uses all header sections too.
+    if (state.rows && state.rows[0]) state.rows[0].sections = state.console.sections.slice();
+    else if (row && row.ok !== false) state.rows = [row];
+    if (!state.sectionsPage) state.sectionsPage = "top";
+    if (isLegacyWpSections(sections)) {
+      msg("Still on legacy sections (body_1). Hard-refresh this page, then press 再生成.", false);
+    }
+    draw();
+    return true;
+  }
+
+  function patchConsole() {
+    // Final sections UI is drawn via viewResults(); no live prose panel.
+    if (state.step === "results") draw();
+  }
+
+  function sectionExportRows(row, sections) {
+    return (sections || [])
+      .filter(function (s) {
+        // Internal lab memo — not a WordPress CMS field.
+        return s && s.id && s.id !== "notes";
+      })
+      .map(function (s) {
+        return [
+          s.id || "",
+          s.label_ja || "",
+          s.wp_page || "home",
+          s.text || ""
+        ];
+      });
+  }
+
+  function downloadCsv() {
+    try {
+      var row = (state.rows || [])[0] || {};
+      var sections = normalizeRowSections(row);
+      if (!sections.length) sections = state.console.sections || [];
+      var rows = sectionExportRows(row, sections);
+      if (!rows.length) throw new Error("No WordPress sections to download");
+      var headers = ["field", "label", "wp_page", "content"];
+      var lines = [headers].concat(rows).map(function (cols) {
+        return cols.map(function (c) {
+          var v = String(c == null ? "" : c);
+          if (/[",\n\r]/.test(v)) return '"' + v.replace(/"/g, '""') + '"';
+          return v;
+        }).join(",");
+      });
+      var blob = new Blob(["\ufeff" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+      var a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      var shop = (state.hearing && state.hearing.business_name) || "hearing";
+      a.download = "WP_" + shop + ".csv";
+      a.click();
+      URL.revokeObjectURL(a.href);
+      msg("CSV downloaded (WordPress fields only)", true);
+    } catch (e) {
+      msg(e.message || "CSV download failed", false);
+    }
+  }
+
+  async function boot() {
+    try {
+      msg("Loading config…");
+      await loadConfig();
+      draw();
+      msg("BBS-CMS AI ready. Start with Config, then Hearing.", true);
+    } catch (e) {
+      draw();
+      var err = e && e.name === "AbortError"
+        ? "Config request timed out. Refresh, or check /v1/lab/config."
+        : (e.message || "Boot failed");
+      msg(err, false);
+    }
+  }
+  // Draw shell immediately so the page never looks stuck blank.
+  try { stepper(); } catch (e) {}
+  boot();
+})();
+</script>
+</body>
+</html>
