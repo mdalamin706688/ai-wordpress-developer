@@ -1513,7 +1513,8 @@
   }
   function isLabHearing(h) {
     h = h || state.hearing || {};
-    return h.production_type === "type3" ||
+    return h.production_type === "type1" ||
+      h.production_type === "type3" ||
       h.production_type === "type2" ||
       h.production_type === "type4";
   }
@@ -1523,7 +1524,8 @@
     var p = h.project || {};
     var store = h.store || {};
     var typeLabel = h.production_label || "—";
-    if (h.production_type === "type2") typeLabel = "Type 2 · Renewal";
+    if (h.production_type === "type1") typeLabel = "Type 1 · New Site";
+    else if (h.production_type === "type2") typeLabel = "Type 2 · Renewal";
     else if (h.production_type === "type3") typeLabel = "Type 3 · Satellite";
     else if (h.production_type === "type4") typeLabel = "Type 4 · Satellite Renewal";
     return {
@@ -1576,11 +1578,13 @@
     return line;
   }
 
+  var TYPE1_BLUEPRINT_VERSION = 1;
   var TYPE2_BLUEPRINT_VERSION = 1;
   var TYPE3_BLUEPRINT_VERSION = 3;
   var TYPE4_BLUEPRINT_VERSION = 1;
   var TYPE3_MIN_NAV_PAGES = 12;
   var TYPE2_MIN_NAV_PAGES = 8;
+  var TYPE1_MIN_NAV_PAGES = 12;
 
   function currentHearingType() {
     return (state.hearing && state.hearing.production_type) ||
@@ -1588,13 +1592,16 @@
   }
 
   function expectedNavPages() {
-    if (currentHearingType() === "type2") return TYPE2_MIN_NAV_PAGES;
+    var t = currentHearingType();
+    if (t === "type2") return TYPE2_MIN_NAV_PAGES;
+    if (t === "type1") return TYPE1_MIN_NAV_PAGES;
     if (state.config && state.config.type3_nav_pages) return state.config.type3_nav_pages;
     return TYPE3_MIN_NAV_PAGES;
   }
 
   function expectedBlueprintVersion() {
     var t = currentHearingType();
+    if (t === "type1") return TYPE1_BLUEPRINT_VERSION;
     if (t === "type2") return TYPE2_BLUEPRINT_VERSION;
     if (t === "type4") return TYPE4_BLUEPRINT_VERSION;
     return TYPE3_BLUEPRINT_VERSION;
@@ -1607,9 +1614,8 @@
     if (probe == null && ver == null) return true;
     if (ver != null && ver < TYPE3_BLUEPRINT_VERSION) return false;
     if (probe != null && probe < TYPE3_MIN_NAV_PAGES) return false;
-    // Type2 / Type4 support marker on newer servers
     var t = currentHearingType();
-    if ((t === "type2" || t === "type4") && cfg.active_production_types &&
+    if ((t === "type1" || t === "type2" || t === "type4") && cfg.active_production_types &&
         cfg.active_production_types.indexOf(t) < 0) {
       return false;
     }
@@ -1623,7 +1629,7 @@
     if (ver != null && ver < TYPE3_BLUEPRINT_VERSION) return true;
     if (probe != null && probe < TYPE3_MIN_NAV_PAGES) return true;
     var t = currentHearingType();
-    if ((t === "type2" || t === "type4") && cfg.active_production_types &&
+    if ((t === "type1" || t === "type2" || t === "type4") && cfg.active_production_types &&
         cfg.active_production_types.indexOf(t) < 0) {
       return true;
     }
@@ -1955,7 +1961,7 @@
     var h = state.hearing;
     if (!h) {
       return '<div class="card"><h2>Hearing</h2><p class="lead">Upload the hearing CSV file.</p>' +
-        '<div class="dropzone" id="hearingDrop"><strong>Drop CSV here</strong><p>Hearing sheet (Type 2 Renewal, Type 3 Satellite, or Type 4 Satellite Renewal)</p>' +
+        '<div class="dropzone" id="hearingDrop"><strong>Drop CSV here</strong><p>Hearing sheet (Type 1 New Site, Type 2 Renewal, Type 3 Satellite, or Type 4 Satellite Renewal)</p>' +
         '<label class="btn g" style="display:inline-block"><input type="file" id="hearingUp" accept=".csv,.txt" hidden>Choose file</label></div></div>';
     }
     var s = hearingSummary(h);
@@ -1968,7 +1974,7 @@
       '<div class="cell"><div class="k">File</div><div class="v">' + esc(state.hearingFile || "—") + "</div></div>" +
       "</div>" +
       (!isLabHearing(h)
-        ? '<div class="gate-bar bad"><p class="gate-hint">This hearing type is not supported in this lab (use Type 2 Renewal, Type 3 Satellite, or Type 4 Satellite Renewal).</p></div>'
+        ? '<div class="gate-bar bad"><p class="gate-hint">This hearing type is not supported in this lab (use Type 1–4 hearing sheets).</p></div>'
         : '<div class="gate-bar ok"><p class="gate-hint">Ready for AI-1.</p></div>') +
       '<div class="actions"><label class="btn"><input type="file" id="hearingUp" accept=".csv,.txt" hidden>Replace</label>' +
       newGenerationBtnHtml() +

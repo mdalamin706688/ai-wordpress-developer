@@ -13,6 +13,7 @@ from ai_agent.v2.hearing_directives import (
     company_page_request,
 )
 
+TYPE1_BLUEPRINT_VERSION = 1
 TYPE2_BLUEPRINT_VERSION = 1
 TYPE3_BLUEPRINT_VERSION = 3
 TYPE4_BLUEPRINT_VERSION = 1
@@ -36,14 +37,17 @@ TYPE3_STANDARD_NAV_SLUGS = (
 # Active production types in the v2 lab (/ai/v2/).
 V2_LAB_ACTIVE_TYPES = frozenset(
     {
+        ProductionType.TYPE1_SHINKI.value,
         ProductionType.TYPE2_RENEWAL.value,
         ProductionType.TYPE3_SATELLITE.value,
         ProductionType.TYPE4_SATELLITE_RENEWAL.value,
     }
 )
 
-_SATELLITE_NAV_TYPES = frozenset(
+# Types that get standard nav shells (access/blog/contact/sitemap/…) via inject.
+_NAV_SHELL_TYPES = frozenset(
     {
+        ProductionType.TYPE1_SHINKI.value,
         ProductionType.TYPE3_SATELLITE.value,
         ProductionType.TYPE4_SATELLITE_RENEWAL.value,
     }
@@ -51,8 +55,27 @@ _SATELLITE_NAV_TYPES = frozenset(
 
 
 def uses_satellite_nav(hearing: dict[str, Any] | None) -> bool:
-    """Type 3 + Type 4 share satellite nav shells / inject."""
-    return str((hearing or {}).get("production_type") or "") in _SATELLITE_NAV_TYPES
+    """Type 1 / 3 / 4 share template nav shells / inject (name kept for API callers)."""
+    return str((hearing or {}).get("production_type") or "") in _NAV_SHELL_TYPES
+
+
+def _default_clone_for_hearing(hearing: dict[str, Any] | None) -> str:
+    ptype = str((hearing or {}).get("production_type") or "")
+    if ptype == ProductionType.TYPE1_SHINKI.value:
+        return "bbs_standard_template"
+    if ptype == ProductionType.TYPE4_SATELLITE_RENEWAL.value:
+        return "bbs_satellite_renewal"
+    return "bbs_satellite_template"
+
+
+def _blueprint_version_for_type(ptype: str) -> int:
+    if ptype == ProductionType.TYPE1_SHINKI.value:
+        return TYPE1_BLUEPRINT_VERSION
+    if ptype == ProductionType.TYPE2_RENEWAL.value:
+        return TYPE2_BLUEPRINT_VERSION
+    if ptype == ProductionType.TYPE4_SATELLITE_RENEWAL.value:
+        return TYPE4_BLUEPRINT_VERSION
+    return TYPE3_BLUEPRINT_VERSION
 
 
 def refresh_blueprint_stats(blueprint: dict[str, Any]) -> None:
@@ -126,21 +149,16 @@ def omit_blank_pages_from_blueprint(blueprint: dict[str, Any]) -> list[dict[str,
 
 
 def inject_missing_type3_nav_pages(blueprint: dict[str, Any], hearing: dict[str, Any]) -> bool:
-    """Add standard satellite nav shells when an older builder returned a short page list.
+    """Add standard nav shells when an older builder returned a short page list.
 
-    Used for Type 3 (サテライト) and Type 4 (サテライトリニューアル).
+    Used for Type 1 (新規), Type 3 (サテライト), and Type 4 (サテライトリニューアル).
     """
     if not uses_satellite_nav(hearing):
         return False
     pages = [p for p in (blueprint.get("pages") or []) if isinstance(p, dict)]
     seen = {str(p.get("slug") or "") for p in pages}
     name = _site_name(hearing)
-    default_clone = (
-        "bbs_satellite_renewal"
-        if str(hearing.get("production_type") or "") == ProductionType.TYPE4_SATELLITE_RENEWAL.value
-        else "bbs_satellite_template"
-    )
-    clone = str(blueprint.get("clone_mode") or default_clone)
+    clone = str(blueprint.get("clone_mode") or _default_clone_for_hearing(hearing))
     before = len(pages)
     _append_access_page(hearing, pages, seen, name=name, clone=clone)
     _append_blog_page(hearing, pages, seen, name=name, clone=clone)
@@ -200,11 +218,7 @@ def inject_missing_type3_nav_pages(blueprint: dict[str, Any], hearing: dict[str,
         for page in blueprint["tag_pages"]:
             enrich_page_sections(page, hearing)
     ptype = str(hearing.get("production_type") or "")
-    blueprint["blueprint_version"] = (
-        TYPE4_BLUEPRINT_VERSION
-        if ptype == ProductionType.TYPE4_SATELLITE_RENEWAL.value
-        else TYPE3_BLUEPRINT_VERSION
-    )
+    blueprint["blueprint_version"] = _blueprint_version_for_type(ptype)
     omit_blank_pages_from_blueprint(blueprint)
     refresh_blueprint_stats(blueprint)
     return True
@@ -215,6 +229,7 @@ def merge_type3_blueprint_pages(partial: dict[str, Any], shell: dict[str, Any]) 
     merged: dict[str, Any] = dict(shell)
     for key in (
         "satellite",
+        "shinki",
         "renewal",
         "clone_mode",
         "site_name",
@@ -253,11 +268,7 @@ def merge_type3_blueprint_pages(partial: dict[str, Any], shell: dict[str, Any]) 
     merged["tag_pages"] = merge_page_lists(list(shell.get("tag_pages") or []), list(partial.get("tag_pages") or []))
     merged["nav"] = [{"id": p["id"], "label": p["nav_label"], "slug": p["slug"]} for p in merged["pages"]]
     ptype = str(merged.get("production_type") or "")
-    merged["blueprint_version"] = (
-        TYPE4_BLUEPRINT_VERSION
-        if ptype == ProductionType.TYPE4_SATELLITE_RENEWAL.value
-        else TYPE3_BLUEPRINT_VERSION
-    )
+    merged["blueprint_version"] = _blueprint_version_for_type(ptype)
     refresh_blueprint_stats(merged)
     return merged
 
@@ -275,6 +286,22 @@ def finalize_type3_blueprint(partial: dict[str, Any], hearing: dict[str, Any]) -
         merged["omitted_pages"] = list(shell.get("omitted_pages") or [])
     omit_blank_pages_from_blueprint(merged)
     merged["blueprint_version"] = TYPE3_BLUEPRINT_VERSION
+    return merged
+
+
+def finalize_type1_blueprint(partial: dict[str, Any], hearing: dict[str, Any]) -> dict[str, Any]:
+    """Ensure full type1 新規 nav + stats; keep AI-1 section plans."""
+    from ai_agent.v2.section_planner import strip_blueprint_section_content
+
+    shell = build_site_blueprint(hearing)
+    inject_missing_type3_nav_pages(shell, hearing)
+    merged = merge_type3_blueprint_pages(partial, shell)
+    strip_blueprint_section_content(merged)
+    if shell.get("omitted_pages") and not merged.get("omitted_pages"):
+        merged["omitted_pages"] = list(shell.get("omitted_pages") or [])
+    omit_blank_pages_from_blueprint(merged)
+    merged["blueprint_version"] = TYPE1_BLUEPRINT_VERSION
+    merged["production_type"] = ProductionType.TYPE1_SHINKI.value
     return merged
 
 
@@ -648,6 +675,126 @@ def _finish_blueprint(
     if extra:
         bp.update(extra)
     refresh_blueprint_stats(bp)
+    return bp
+
+
+def build_type1_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
+    """Type 1 新規 — full standard site from hearing (ページの追加 + standard nav shells)."""
+    name = _site_name(hearing)
+    project = hearing.get("project") or {}
+    clone = "bbs_standard_template"
+    pages: list[dict[str, Any]] = []
+    seen_slugs: set[str] = {"home"}
+    focus_keywords = list(hearing.get("focus_keywords") or [])
+
+    pages.append(
+        {
+            "id": "home",
+            "role": "top",
+            "type": "top",
+            "slug": "home",
+            "nav_label": "TOP",
+            "title": f"{name}｜トップ",
+            "clone": clone,
+            "sections": sections_for_page_type("top"),
+            "source": {
+                "kind": "standard_template",
+                "fields": ["concept_global", "重点ワード1..5", "ページの追加"],
+            },
+            "content_seeds": focus_keywords,
+        }
+    )
+
+    _append_hearing_pages(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_access_page(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_blog_page(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_reviews_page(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_contact_page(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_utility_shell_page(
+        pages=pages,
+        seen_slugs=seen_slugs,
+        page_id="sitemap",
+        slug="sitemap",
+        nav_label="サイトマップ",
+        page_type="sitemap",
+        name=name,
+        clone=clone,
+    )
+    _append_utility_shell_page(
+        pages=pages,
+        seen_slugs=seen_slugs,
+        page_id="privacy",
+        slug="privacy",
+        nav_label="プライバシーポリシー",
+        page_type="privacy",
+        name=name,
+        clone=clone,
+    )
+    _append_utility_shell_page(
+        pages=pages,
+        seen_slugs=seen_slugs,
+        page_id="column",
+        slug="column",
+        nav_label="コラム",
+        page_type="column",
+        name=name,
+        clone=clone,
+    )
+
+    apply_directives_to_pages(pages, dict(hearing.get("page_directives") or {}))
+    attach_writing_push_seeds(pages, hearing)
+
+    seo_blueprints = _build_seo_blueprints(hearing, name=name)
+    tag_blueprints = _build_tag_blueprints(hearing, name=name)
+    dynamic_refs = _build_dynamic_refs(hearing)
+
+    for page in pages:
+        enrich_page_sections(page, hearing)
+    for page in seo_blueprints:
+        enrich_page_sections(page, hearing)
+    for page in tag_blueprints:
+        enrich_page_sections(page, hearing)
+
+    omitted_preview: list[dict[str, str]] = []
+    kept_pages: list[dict[str, Any]] = []
+    for page in pages:
+        if isinstance(page, dict) and page.get("leave_blank"):
+            omitted_preview.append(
+                {
+                    "slug": str(page.get("slug") or page.get("id") or ""),
+                    "label": str(page.get("nav_label") or page.get("slug") or ""),
+                    "reason": str(
+                        page.get("leave_blank_reason")
+                        or "ヒアリングに掲載内容なし — ページ自体をサイト構成から除外"
+                    ),
+                }
+            )
+        elif isinstance(page, dict):
+            kept_pages.append(page)
+    pages = kept_pages
+
+    bp = _finish_blueprint(
+        hearing,
+        production_type=ProductionType.TYPE1_SHINKI,
+        production_label=hearing.get("production_label") or "新規",
+        clone_mode=clone,
+        pages=pages,
+        seo_blueprints=seo_blueprints,
+        tag_blueprints=tag_blueprints,
+        dynamic_refs=dynamic_refs,
+        extra={
+            "blueprint_version": TYPE1_BLUEPRINT_VERSION,
+            "shinki": {
+                "domain": str(project.get("domain") or ""),
+                "purpose": str(project.get("purpose") or ""),
+                "reference_sites": list(hearing.get("reference_sites") or []),
+                "focus_keywords": focus_keywords,
+                "tag_keywords": list(hearing.get("tag_keywords") or []),
+            },
+            "omitted_pages": omitted_preview,
+        },
+    )
+    omit_blank_pages_from_blueprint(bp)
     return bp
 
 
@@ -1261,6 +1408,8 @@ def build_type2_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
 def build_site_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
     """Route to production-type blueprint builder."""
     ptype = str(hearing.get("production_type") or "")
+    if ptype == ProductionType.TYPE1_SHINKI.value:
+        return build_type1_blueprint(hearing)
     if ptype == ProductionType.TYPE3_SATELLITE.value:
         return build_type3_blueprint(hearing)
     if ptype == ProductionType.TYPE2_RENEWAL.value:
@@ -1288,6 +1437,8 @@ def build_site_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
 def finalize_lab_blueprint(partial: dict[str, Any], hearing: dict[str, Any]) -> dict[str, Any]:
     """Finalize blueprint for whichever active v2 lab type is in the hearing."""
     ptype = str(hearing.get("production_type") or "")
+    if ptype == ProductionType.TYPE1_SHINKI.value:
+        return finalize_type1_blueprint(partial, hearing)
     if ptype == ProductionType.TYPE3_SATELLITE.value:
         return finalize_type3_blueprint(partial, hearing)
     if ptype == ProductionType.TYPE2_RENEWAL.value:

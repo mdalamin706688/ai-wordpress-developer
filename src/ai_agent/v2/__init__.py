@@ -1,7 +1,6 @@
 """BBS hearing-sheet v2 pipeline (separate from v1 /ai lab).
 
-v2 active: type2 リニューアル + type3 サテライト + type4 サテライトリニューアル.
-type1 新規 → use v1 /ai/.
+v2 active: type1 新規 + type2 リニューアル + type3 サテライト + type4 サテライトリニューアル.
 """
 
 from ai_agent.v2.blueprint import build_site_blueprint

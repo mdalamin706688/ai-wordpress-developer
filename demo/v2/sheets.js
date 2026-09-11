@@ -302,6 +302,7 @@
     if (/サテライトリニューアル|satellite.?renewal|type4/i.test(String(prodLabel))) prodLabel = "Type 4";
     else if (/サテライト|satellite|sateraito|type3/i.test(String(prodLabel))) prodLabel = "Type 3";
     else if (/リニューアル|renewal|type2/i.test(String(prodLabel))) prodLabel = "Type 2";
+    else if (/新規|shinki|type1/i.test(String(prodLabel))) prodLabel = "Type 1";
     var meta = [
       ["BBS-CMS · Site Content Export", ""],
       ["サイト名", site],

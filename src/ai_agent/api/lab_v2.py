@@ -1,4 +1,4 @@
-"""V2 lab API — separate from /v1/lab (does not touch v1 pipeline)."""
+"""V2 lab API — Type 1–4 hearing production (UI at /ai/v2/)."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from ai_agent.api.lab import (
 from ai_agent.config import get_settings
 from ai_agent.models.registry import ModelRegistry
 from ai_agent.v2.blueprint import (
+    TYPE1_BLUEPRINT_VERSION,
     TYPE2_BLUEPRINT_VERSION,
     TYPE3_BLUEPRINT_VERSION,
     TYPE3_MIN_NAV_PAGES,
@@ -112,12 +113,13 @@ def _enrich_v2_lab_config(out: dict[str, Any], *, include_catalog: bool = False)
     out["ui_path"] = "/ai/v2/"
     out["api_prefix"] = "/v2/lab"
     out["blueprint_version"] = TYPE3_BLUEPRINT_VERSION
+    out["type1_blueprint_version"] = TYPE1_BLUEPRINT_VERSION
     out["type2_blueprint_version"] = TYPE2_BLUEPRINT_VERSION
     out["type4_blueprint_version"] = TYPE4_BLUEPRINT_VERSION
     out["type3_nav_pages"] = type3_nav_probe_count() or (TYPE3_MIN_NAV_PAGES + 1)
     out["server_nav_probe"] = out["type3_nav_pages"]
-    out["satellite_build"] = "2026-09-10-type4"
-    out["active_production_types"] = ["type2", "type3", "type4"]
+    out["satellite_build"] = "2026-09-11-v2-only"
+    out["active_production_types"] = ["type1", "type2", "type3", "type4"]
     out["model_roles"] = {
         "semantics": "satellite",
         "max_models": 2,
@@ -139,8 +141,8 @@ def _enrich_v2_lab_config(out: dict[str, Any], *, include_catalog: bool = False)
             {
                 "id": ProductionType.TYPE1_SHINKI.value,
                 "label": production_type_label(ProductionType.TYPE1_SHINKI),
-                "description": "新規 — use the standard site lab at /ai/.",
-                "status": "standard_lab_only",
+                "description": "新規 — standard site from hearing (ページの追加 + standard TOP).",
+                "status": "active",
             },
             {
                 "id": ProductionType.TYPE2_RENEWAL.value,
@@ -163,7 +165,7 @@ def _enrich_v2_lab_config(out: dict[str, Any], *, include_catalog: bool = False)
         ]
         out["export_formats"] = ["csv", "google_sheets"]
         out["ai_stages"] = ["planner", "writer"]
-        out["planner_status"] = "llm_type2_type3_type4"
+        out["planner_status"] = "llm_type1_type2_type3_type4"
         out["writer_status"] = "active"
     return out
 
@@ -196,8 +198,8 @@ def _require_v2_lab_hearing(hearing: dict[str, Any]) -> None:
         raise HTTPException(
             status_code=400,
             detail=(
-                "This lab supports Type 2 (リニューアル), Type 3 (サテライト), "
-                "and Type 4 (サテライトリニューアル) hearing sheets only"
+                "This lab supports Type 1 (新規), Type 2 (リニューアル), "
+                "Type 3 (サテライト), and Type 4 (サテライトリニューアル) hearing sheets only"
             ),
         )
 

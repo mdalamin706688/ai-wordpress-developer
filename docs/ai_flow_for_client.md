@@ -244,100 +244,69 @@ The product is a **Python FastAPI service** with a browser UI. AI models are cal
 ```mermaid
 flowchart TB
   subgraph ui [Browser UI]
-    HTML[demo/index.html]
+    HTML[demo/v2 lab]
   end
   subgraph api [API layer]
-    LAB[src/ai_agent/api/lab.py]
+    LAB[src/ai_agent/api/lab_v2.py]
     APP[src/ai_agent/api/app.py]
   end
-  subgraph pipeline [Production pipeline]
-    HEAR[hearing_adapter.py]
-    RULES[prompt_rules.py]
-    STACK[ai_stack.py]
-    GROUND[grounding.py]
-    VALID[validate.py]
-    SECT[section_pages.py + section_enforce.py]
-    SITE[site_composer.py]
+  subgraph pipeline [v2 hearing pipeline]
+    PARSE[hearing_parser.py]
+    BP[blueprint.py]
+    PLAN[section_planner.py]
+    WRITE[writer.py]
   end
   subgraph models [Model layer]
     REG[models/registry.py]
     PROV[models/providers.py]
   end
-  HTML -->|POST /v1/lab/run/stream| LAB
-  LAB --> HEAR
-  LAB --> RULES
-  LAB --> STACK
-  STACK --> REG
+  HTML -->|POST /v2/lab/*| LAB
+  LAB --> PARSE
+  LAB --> BP
+  LAB --> PLAN
+  LAB --> WRITE
+  LAB --> REG
   REG --> PROV
-  STACK --> GROUND
-  STACK --> VALID
-  VALID --> SECT
-  LAB --> SITE
-  SITE --> HTML
+  APP --> LAB
 ```
 
 ### 11.2 Repository layout (what each part does)
 
 | Path | Role |
 |------|------|
-| `demo/index.html` | 5-step wizard: Config, Hearing, Draft, Sections, CSV |
-| `src/ai_agent/api/lab.py` | Config API, hearing upload, **draft run** (all header pages), section export |
-| `src/ai_agent/api/app.py` | FastAPI app, routes `/ai/`, health, CORS |
-| `src/ai_agent/pipeline/hearing_adapter.py` | Parse hearing CSV → structured `hearing` dict + `missing[]` |
-| `src/ai_agent/pipeline/prompt_rules.py` | **TOP / Service section rules** + shared constraints; injected into prompts |
-| `src/ai_agent/pipeline/ai_stack.py` | **Writer → Improve → Verify → Ground → Seal** orchestration |
-| `src/ai_agent/pipeline/grounding.py` | Deterministic fact filter (removes unsupported claims) |
-| `src/ai_agent/pipeline/verify.py` | Verifier model checks draft vs hearing |
-| `src/ai_agent/pipeline/validate.py` | WordPress prep + wires section QA |
-| `src/ai_agent/pipeline/section_pages.py` | Build structured TOP/Service section objects from hearing + AI copy |
-| `src/ai_agent/pipeline/section_enforce.py` | Checklist coverage (`SECTION_GAP` if a required block is missing) |
-| `src/ai_agent/pipeline/site_composer.py` | Assemble **5-page draft package** (home, service, menu, access, contact) |
+| `demo/v2/` | Lab UI (Config → Hearing → AI-1 → AI-2 → Export) for Type 1–4 |
+| `src/ai_agent/api/lab_v2.py` | Hearing parse, blueprint, write stream, export |
+| `src/ai_agent/api/app.py` | FastAPI app, `/ai/v2/` routes, health, CORS |
+| `src/ai_agent/v2/hearing_parser.py` | Parse hearing CSV → structured `hearing` dict |
+| `src/ai_agent/v2/blueprint.py` | Type 1–4 page list + section shells |
+| `src/ai_agent/v2/section_planner.py` | AI-1 dynamic section creator |
+| `src/ai_agent/v2/writer.py` | AI-2 Japanese section writer |
 | `src/ai_agent/models/registry.py` | Model catalog, provider binding, API key checks |
 
 ### 11.3 Main API endpoints
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/v1/lab/config` | Models, keys (masked), prompts, section catalog |
-| `PUT` | `/v1/lab/config` | Save models, keys, prompts |
-| `POST` | `/v1/lab/hearing/parse` | Upload CSV → `hearing` JSON |
-| `POST` | `/v1/lab/run/stream` | **Production draft** (SSE progress; default `page=both`) |
-| `GET` | `/ai/` | Lab UI |
+| `GET` | `/v2/lab/config` | Models, keys (masked), prompts, production types |
+| `PUT` | `/v2/lab/config` | Save models, keys, prompts |
+| `POST` | `/v2/lab/hearing/parse` | Upload CSV → `hearing` JSON |
+| `POST` | `/v2/lab/blueprint` | AI-1 page/section plan |
+| `POST` | `/v2/lab/write/stream` | AI-2 content writer (SSE) |
+| `GET` | `/ai/v2/` | Lab UI (Type 1–4) |
 
 ### 11.4 Code path for one draft run
 
-When the user clicks **Start draft**, this is the call chain:
+When the user runs **AI-1** then **AI-2**:
 
 ```
-demo/index.html
-  POST /v1/lab/run/stream  { hearing, model_ids, page: "both", use_lab_prompt: true }
-
-lab.py :: lab_run_stream()
-  prepare_hearing_for_production(hearing)     # normalize + missing list
-  _run_pages("both") → ["top", "service"]
-
-  FOR EACH page in ["top", "service"]:
-    _build_messages(hearing, page)
-      system_prompt  (from lab config)
-      user_template + fact_pack(hearing)
-      + page_prompt_rules(page)               # ← fixed section rules appended here
-
-    run_writer_production(registry, hearing, messages)
-      Writer model → JSON copy
-      Improve model (optional)
-      Verifier model(s) → issue list
-      ground_copy()                           # deterministic filter
-      seal_structured_fields()
-      prepare_copy_for_wordpress()            # includes section_enforce
-
-  merge_top_service_copies(top_copy, service_copy)
-  compose_site_draft(hearing, merged_copy)    # 5 WP pages + sections bundle
-  build_wp_sections(copy, wordpress, hearing) # UI + CSV blocks
-
-  SSE → UI Sections tab (TOP | Service)
+demo/v2/
+  POST /v2/lab/hearing/parse  { csv_text }
+  POST /v2/lab/blueprint      { hearing, model_ids }   # AI-1
+  POST /v2/lab/write/stream   { hearing, blueprint, model_ids }  # AI-2
+  POST /v2/lab/export         { blueprint, sections }
 ```
 
-**Default behaviour:** `page` defaults to `"both"` in `LabRunIn` — no UI switch required.
+Production type comes from hearing `制作タイプ` (新規 / リニューアル / サテライト / サテライトリニューアル).
 
 ### 11.5 Key data structures
 
@@ -433,34 +402,35 @@ Rules are **data-driven** (Python lists of `{ id, label, web, rule }`) so the sa
 | Item | Value |
 |------|--------|
 | Hosting | Single FastAPI process (systemd + nginx reverse proxy) |
-| Public UI | `/ai/` (Type 1) and `/ai/v2/` (Type 2–4) |
+| Public UI | `/ai/v2/` (Type 1–4); `/ai/` redirects to `/ai/v2/` |
 | Process | `systemd` unit → uvicorn (default port 8765) |
-| Nginx | Proxies `/ai/`, `/v1/`, `/v2/` → local FastAPI |
+| Nginx | Proxies `/ai/`, `/v2/` → local FastAPI |
 
 Live demo (when available): https://theazurite.tech/ai/v2/
 
 ---
 
-## 12. Production lab (Type 2 Renewal + Type 3 Satellite + Type 4 Satellite Renewal)
+## 12. Production lab (Type 1–4 hearing sheets)
 
-Dedicated workflow for **リニューアル**, **サテライト**, and **サテライトリニューアル** hearing sheets at `/ai/v2/`. The **standard site lab** at `/ai/` handles full **新規** (Type 1) production.
+Dedicated workflow for **新規**, **リニューアル**, **サテライト**, and **サテライトリニューアル** hearing sheets at `/ai/v2/`.
 
 | Item | Value |
 |------|--------|
 | UI | http://127.0.0.1:8765/ai/v2/ (local) |
-| Scope | **Type 2 — リニューアル**, **Type 3 — サテライト**, and **Type 4 — サテライトリニューアル** hearing CSV |
-| Sample CSVs | `demo/v2/samples/type2-renewal.csv`, `type3-satellite.csv`, `type4-satellite-renewal.csv` |
+| Scope | **Type 1–4** hearing CSV |
+| Sample CSVs | `type1-shinki.csv`, `type2-renewal.csv`, `type3-satellite.csv`, `type4-satellite-renewal.csv` |
 | Stages | **AI-1 Section Creator** (LLM — dynamic sections) → **AI-2 Writer** (section text) → export |
 
 ### Type differences
 
 | Type | Hearing `制作タイプ` | Blueprint source |
 |------|---------------------|------------------|
+| **Type 1 New Site** | 新規 | Standard TOP + `ページの追加` + standard nav shells |
 | **Type 2 Renewal** | リニューアル | `既存URL` + required `既存ページURL*` + `ページの追加` + form/sitemap/privacy |
 | **Type 3 Satellite** | サテライト | Satellite template TOP + `ページの追加` + standard nav shells |
 | **Type 4 Satellite Renewal** | サテライトリニューアル | Type 3 satellite shell + Type 2 renewal policies (`既存URL`, 色味/文言, TOP踏襲) |
 
-Same AI-1 / AI-2 model roles and export path for all three types.
+Same AI-1 / AI-2 model roles and export path for all types.
 
 ### 12.1 Model selection (1 or 2 models only)
 
@@ -518,4 +488,4 @@ User prompt template supports `{hearing}` and `{page_rules}` (appended automatic
 
 ---
 
-*Document version: 2026-09-10 · BBS-CMS AI WordPress pipeline*
+*Document version: 2026-09-11 · BBS-CMS AI WordPress pipeline*

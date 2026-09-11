@@ -54,11 +54,10 @@ if [[ "${1:-}" == "--daemon" ]]; then
   echo $! >"$PID_FILE"
   sleep 1
   echo "BBS-CMS AI running in background (pid $(cat "$PID_FILE"))"
-  echo "UI:  http://127.0.0.1:${PORT}/ai/"
-  echo "Also: http://127.0.0.1:${PORT}/demo/ai/  and  http://127.0.0.1:${PORT}/demo/"
+  echo "UI:  http://127.0.0.1:${PORT}/ai/v2/"
   echo "Log: $LOG_FILE"
   exit 0
 fi
 
-echo "Open http://127.0.0.1:${PORT}/ai/  (Ctrl+C stops)"
+echo "Open http://127.0.0.1:${PORT}/ai/v2/  (Ctrl+C stops)"
 exec "$UVICORN" ai_agent.api.app:app --host "$HOST" --port "$PORT"

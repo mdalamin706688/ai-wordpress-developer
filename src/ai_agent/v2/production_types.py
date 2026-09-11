@@ -8,7 +8,7 @@ from enum import Enum
 class ProductionType(str, Enum):
     """Client hearing-sheet production types (v2 only)."""
 
-    TYPE1_SHINKI = "type1"  # 新規 — clone BBS standard website template
+    TYPE1_SHINKI = "type1"  # 新規 — BBS standard template (v2 lab)
     TYPE2_RENEWAL = "type2"  # リニューアル — renew existing client site (既存URL / 既存ページ)
     TYPE3_SATELLITE = "type3"  # サテライト
     TYPE4_SATELLITE_RENEWAL = "type4"  # サテライトリニューアル

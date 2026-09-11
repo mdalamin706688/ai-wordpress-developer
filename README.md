@@ -5,12 +5,13 @@ Hearing-sheet CSV → Japanese WordPress draft sections.
 **Architecture:** monolithic FastAPI service with a REST API (not microservices).  
 UI + hearing parse + AI-1/AI-2 pipeline + export run in one app.
 
-## Labs
+## Lab
 
-| Lab | Path | Hearing types |
-|-----|------|----------------|
-| Standard | `/ai/` | Type 1 新規 |
-| Production | `/ai/v2/` | Type 2 リニューアル, Type 3 サテライト, Type 4 サテライトリニューアル |
+| Path | Hearing types |
+|------|----------------|
+| `/ai/v2/` | Type 1 新規 · Type 2 リニューアル · Type 3 サテライト · Type 4 サテライトリニューアル |
+
+Samples: `/ai/v2/samples/type1-shinki.csv` … `type4-satellite-renewal.csv`
 
 ## Setup
 
@@ -31,8 +32,6 @@ PYTHONPATH=src uvicorn ai_agent.api.app:app --host 0.0.0.0 --port 8765
 
 Open http://127.0.0.1:8765/ai/v2/
 
-Sample Type 4 CSV: `/ai/v2/samples/type4-satellite-renewal.csv`
-
 ## Tests
 
 ```bash
@@ -43,8 +42,8 @@ PYTHONPATH=src pytest -q
 
 | Path | Role |
 |------|------|
-| `src/ai_agent/` | FastAPI app, models, v1/v2 pipelines |
-| `demo/v2/` | Production lab UI |
+| `src/ai_agent/` | FastAPI app, models, hearing pipelines |
+| `demo/v2/` | Lab UI (all 4 types) |
 | `fixtures/` | Shared hearing fixtures |
 | `docs/` | Client-facing flow docs + model sheets |
 | `scripts/` | Run / systemd / nginx examples |

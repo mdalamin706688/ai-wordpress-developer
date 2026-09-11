@@ -5,7 +5,7 @@
     window.DEMO_API_BASE = fromQuery.replace(/\/$/, "");
     return;
   }
-  // When UI is under /ai or /demo/ai, API still lives at host root (/v1/...).
-  // Leave DEMO_API_BASE empty so requests use same origin absolute paths like /v1/lab/config.
+  // API lives at host root (/v2/lab/...).
+  // Leave DEMO_API_BASE empty so requests use same-origin absolute paths.
   window.DEMO_API_BASE = "";
 })();

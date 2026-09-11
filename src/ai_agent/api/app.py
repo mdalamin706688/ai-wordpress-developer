@@ -2,19 +2,17 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from starlette.responses import RedirectResponse
 
 from ai_agent import __version__
 from ai_agent.api.demo import router as demo_router
 from ai_agent.api.jobs import router as jobs_router
-from ai_agent.api.lab import router as lab_router
 from ai_agent.api.lab_v2 import router as lab_v2_router
 from ai_agent.config import get_settings
 from ai_agent.models.registry import ModelRegistry
 
 ROOT = Path(__file__).resolve().parents[3]
-DEMO_DIR = ROOT / "demo"
 DEMO_V2_DIR = ROOT / "demo" / "v2"
 settings = get_settings()
 
@@ -28,7 +26,7 @@ app.add_middleware(
 )
 app.include_router(jobs_router)
 app.include_router(demo_router)
-app.include_router(lab_router)
+# v1 lab UI/API removed — all production types (1–4) use /ai/v2/ + /v2/lab/*
 app.include_router(lab_v2_router)
 
 
@@ -41,88 +39,32 @@ def _file(path: Path, media_type: str, *, filename: str | None = None) -> FileRe
     )
 
 
-def _html() -> FileResponse:
-    return _file(DEMO_DIR / "index.html", "text/html; charset=utf-8")
-
-
-def _js() -> FileResponse:
-    return _file(DEMO_DIR / "config.js", "application/javascript; charset=utf-8")
-
-
 def _html_v2() -> FileResponse:
     return _file(DEMO_V2_DIR / "index.html", "text/html; charset=utf-8")
 
 
-def _csv() -> FileResponse:
-    return _file(
-        DEMO_DIR / "hearing-sheet.csv",
-        "text/csv; charset=utf-8",
-        filename="hearing-sheet.csv",
-    )
+def _redirect_lab() -> RedirectResponse:
+    return RedirectResponse(url="/ai/v2/", status_code=302)
 
 
 @app.get("/")
 def root() -> RedirectResponse:
-    return RedirectResponse(url="/ai/")
+    return _redirect_lab()
 
 
+# Old v1 UI paths → v2 lab (Type 1–4)
 @app.api_route("/ai", methods=["GET", "HEAD"])
 @app.api_route("/ai/", methods=["GET", "HEAD"])
-def ai_page() -> FileResponse:
-    return _html()
-
-
-@app.api_route("/ai/config.js", methods=["GET", "HEAD"])
-def ai_config() -> FileResponse:
-    return _js()
-
-
-@app.api_route("/ai/hearing-sheet.csv", methods=["GET", "HEAD"])
-@app.api_route("/ai/hearing.csv", methods=["GET", "HEAD"])
-@app.api_route("/ai/hearing_salon.csv", methods=["GET", "HEAD"])
-def ai_hearing_sheet() -> FileResponse:
-    return _csv()
-
-
-@app.api_route("/demo/ai", methods=["GET", "HEAD"])
-@app.api_route("/demo/ai/", methods=["GET", "HEAD"])
-def demo_ai_page() -> FileResponse:
-    return _html()
-
-
-@app.api_route("/demo/ai/config.js", methods=["GET", "HEAD"])
-def demo_ai_config() -> FileResponse:
-    return _js()
-
-
-@app.api_route("/demo/ai/hearing-sheet.csv", methods=["GET", "HEAD"])
-@app.api_route("/demo/ai/hearing.csv", methods=["GET", "HEAD"])
-@app.api_route("/demo/ai/hearing_salon.csv", methods=["GET", "HEAD"])
-def demo_ai_hearing_sheet() -> FileResponse:
-    return _csv()
-
-
 @app.api_route("/demo", methods=["GET", "HEAD"])
 @app.api_route("/demo/", methods=["GET", "HEAD"])
-def demo_page() -> FileResponse:
-    return _html()
-
-
-@app.api_route("/demo/config.js", methods=["GET", "HEAD"])
-def demo_config() -> FileResponse:
-    return _js()
-
-
-@app.api_route("/demo/hearing-sheet.csv", methods=["GET", "HEAD"])
-@app.api_route("/demo/hearing.csv", methods=["GET", "HEAD"])
-@app.api_route("/demo/hearing_salon.csv", methods=["GET", "HEAD"])
-def demo_hearing_sheet() -> FileResponse:
-    return _csv()
+@app.api_route("/demo/ai", methods=["GET", "HEAD"])
+@app.api_route("/demo/ai/", methods=["GET", "HEAD"])
+def legacy_ui_redirect() -> RedirectResponse:
+    return _redirect_lab()
 
 
 @app.get("/favicon.ico")
 def favicon() -> FileResponse:
-    # Keep this route; serve the branded SVG (browsers accept it as favicon).
     return _file(DEMO_V2_DIR / "favicon.svg", "image/svg+xml")
 
 
@@ -155,6 +97,15 @@ def ai_v2_app_js() -> FileResponse:
 @app.api_route("/ai/v2/sheets.js", methods=["GET", "HEAD"])
 def ai_v2_sheets_js() -> FileResponse:
     return _file(DEMO_V2_DIR / "sheets.js", "application/javascript; charset=utf-8")
+
+
+@app.api_route("/ai/v2/samples/type1-shinki.csv", methods=["GET", "HEAD"])
+def ai_v2_sample_type1_csv() -> FileResponse:
+    return _file(
+        DEMO_V2_DIR / "samples" / "type1-shinki.csv",
+        "text/csv; charset=utf-8",
+        filename="type1-shinki.csv",
+    )
 
 
 @app.api_route("/ai/v2/samples/type2-renewal.csv", methods=["GET", "HEAD"])
@@ -191,10 +142,8 @@ def health() -> dict:
         "ok": True,
         "version": __version__,
         "ui": {
-            "ai": "/ai/",
-            "satellite_lab": "/ai/v2/",
-            "demo_ai": "/demo/ai/",
-            "demo": "/demo/",
+            "lab": "/ai/v2/",
+            "types": ["type1", "type2", "type3", "type4"],
         },
         "models": registry.available(),
         "deploy": "local-only",
