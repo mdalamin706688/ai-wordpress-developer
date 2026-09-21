@@ -871,11 +871,489 @@
     });
   }
 
+  function formatTestPackSheetRequests(sheetId, rowCount, tabColor) {
+    var requests = [];
+    var color = tabColor || { red: 0.12, green: 0.22, blue: 0.36 };
+    // Title banner
+    requests.push({
+      mergeCells: {
+        range: {
+          sheetId: sheetId,
+          startRowIndex: 0,
+          endRowIndex: 1,
+          startColumnIndex: 0,
+          endColumnIndex: 3
+        },
+        mergeType: "MERGE_ALL"
+      }
+    });
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId: sheetId,
+          startRowIndex: 0,
+          endRowIndex: 1,
+          startColumnIndex: 0,
+          endColumnIndex: 3
+        },
+        cell: {
+          userEnteredFormat: {
+            textFormat: {
+              bold: true,
+              fontSize: 13,
+              fontFamily: "Noto Sans JP",
+              foregroundColor: { red: 1, green: 1, blue: 1 }
+            },
+            horizontalAlignment: "LEFT",
+            verticalAlignment: "MIDDLE",
+            backgroundColor: color
+          }
+        },
+        fields: "userEnteredFormat(textFormat,horizontalAlignment,verticalAlignment,backgroundColor)"
+      }
+    });
+    requests.push({
+      updateDimensionProperties: {
+        range: { sheetId: sheetId, dimension: "ROWS", startIndex: 0, endIndex: 1 },
+        properties: { pixelSize: 40 },
+        fields: "pixelSize"
+      }
+    });
+    // Header row
+    requests.push({
+      repeatCell: {
+        range: {
+          sheetId: sheetId,
+          startRowIndex: 1,
+          endRowIndex: 2,
+          startColumnIndex: 0,
+          endColumnIndex: 3
+        },
+        cell: {
+          userEnteredFormat: {
+            textFormat: { bold: true, fontSize: 10, fontFamily: "Noto Sans JP" },
+            backgroundColor: { red: 0.93, green: 0.95, blue: 0.97 }
+          }
+        },
+        fields: "userEnteredFormat(textFormat,backgroundColor)"
+      }
+    });
+    // Column widths
+    requests.push({
+      updateDimensionProperties: {
+        range: { sheetId: sheetId, dimension: "COLUMNS", startIndex: 0, endIndex: 1 },
+        properties: { pixelSize: 260 },
+        fields: "pixelSize"
+      }
+    });
+    requests.push({
+      updateDimensionProperties: {
+        range: { sheetId: sheetId, dimension: "COLUMNS", startIndex: 1, endIndex: 2 },
+        properties: { pixelSize: 720 },
+        fields: "pixelSize"
+      }
+    });
+    requests.push({
+      updateDimensionProperties: {
+        range: { sheetId: sheetId, dimension: "COLUMNS", startIndex: 2, endIndex: 3 },
+        properties: { pixelSize: 180 },
+        fields: "pixelSize"
+      }
+    });
+    // Wrap Field labels + Value cells; tall prompt/result rows
+    // Do NOT set textFormat on Value column — Result uses textFormatRuns (bold keys).
+    if (rowCount > 2) {
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId: sheetId,
+            startRowIndex: 2,
+            endRowIndex: rowCount,
+            startColumnIndex: 0,
+            endColumnIndex: 1
+          },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { fontFamily: "Noto Sans JP", fontSize: 10 },
+              wrapStrategy: "WRAP",
+              verticalAlignment: "TOP",
+              borders: allBorders()
+            }
+          },
+          fields: "userEnteredFormat(textFormat,wrapStrategy,verticalAlignment,borders)"
+        }
+      });
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId: sheetId,
+            startRowIndex: 2,
+            endRowIndex: rowCount,
+            startColumnIndex: 1,
+            endColumnIndex: 3
+          },
+          cell: {
+            userEnteredFormat: {
+              wrapStrategy: "WRAP",
+              verticalAlignment: "TOP",
+              borders: allBorders()
+            }
+          },
+          fields: "userEnteredFormat(wrapStrategy,verticalAlignment,borders)"
+        }
+      });
+      requests.push({
+        repeatCell: {
+          range: {
+            sheetId: sheetId,
+            startRowIndex: 2,
+            endRowIndex: rowCount,
+            startColumnIndex: 0,
+            endColumnIndex: 1
+          },
+          cell: {
+            userEnteredFormat: {
+              textFormat: { bold: true, fontSize: 10, fontFamily: "Noto Sans JP" },
+              backgroundColor: { red: 0.95, green: 0.96, blue: 0.98 }
+            }
+          },
+          fields: "userEnteredFormat(textFormat,backgroundColor)"
+        }
+      });
+    }
+    // Prompt + Result rows (index 7–8 = sheet rows 8–9)
+    [7, 8].forEach(function (idx) {
+      if (idx < rowCount) {
+        requests.push({
+          updateDimensionProperties: {
+            range: { sheetId: sheetId, dimension: "ROWS", startIndex: idx, endIndex: idx + 1 },
+            properties: { pixelSize: 280 },
+            fields: "pixelSize"
+          }
+        });
+      }
+    });
+    if (tabColor) {
+      requests.push({
+        updateSheetProperties: {
+          properties: { sheetId: sheetId, tabColor: tabColor },
+          fields: "tabColor"
+        }
+      });
+    }
+    return requests;
+  }
+
+  function buildTestPackWorkbookPlan(packs) {
+    packs = packs || {};
+    var ai1 = packs.ai1 || {};
+    var ai2 = packs.ai2 || {};
+    return [
+      {
+        title: String(ai1.title || "AI-1 Sections").slice(0, 100),
+        kind: "test_pack",
+        values: ai1.values || [],
+        color: { red: 0.12, green: 0.35, blue: 0.55 },
+        dataCount: Math.max(0, ((ai1.values || []).length) - 2)
+      },
+      {
+        title: String(ai2.title || "AI-2 Contents").slice(0, 100),
+        kind: "test_pack",
+        values: ai2.values || [],
+        color: { red: 0.18, green: 0.48, blue: 0.32 },
+        dataCount: Math.max(0, ((ai2.values || []).length) - 2)
+      }
+    ];
+  }
+
+  function chunkSheetCellValues(values, maxChars) {
+    // Google Sheets rejects any cell over 50_000 characters.
+    var limit = Math.max(1000, Math.min(49000, maxChars || 49000));
+    var out = [];
+    (values || []).forEach(function (row) {
+      var field = row && row[0] != null ? String(row[0]) : "";
+      var value = row && row[1] != null ? String(row[1]) : "";
+      var note = row && row[2] != null ? String(row[2]) : "";
+      // Also guard Field/Note columns though Value is the usual offender.
+      if (field.length > limit) field = field.slice(0, limit - 20) + "…(truncated)";
+      if (note.length > limit) note = note.slice(0, limit - 20) + "…(truncated)";
+      if (value.length <= limit) {
+        out.push([field, value, note]);
+        return;
+      }
+      var parts = Math.ceil(value.length / limit);
+      for (var i = 0; i < parts; i++) {
+        var slice = value.slice(i * limit, (i + 1) * limit);
+        var label = i === 0
+          ? field
+          : (field + " cont. " + (i + 1) + "/" + parts);
+        out.push([label, slice, i === 0 ? note : "continuation (Sheets 50k cell limit)"]);
+      }
+    });
+    return out;
+  }
+
+  function stripPackHeader(values) {
+    var rows = values || [];
+    if (rows.length >= 2 && String((rows[1] && rows[1][0]) || "") === "Field") {
+      return rows.slice(2);
+    }
+    if (rows.length >= 1 && String((rows[0] && rows[0][0]) || "") === "Field") {
+      return rows.slice(1);
+    }
+    return rows.slice();
+  }
+
+  /** Two tabs in one spreadsheet: AI-1 Sections + AI-2 Contents (chunked for 50k). */
+  function buildSeparateTestPackTabs(packs) {
+    packs = packs || {};
+    var ai1 = packs.ai1 || {};
+    var ai2 = packs.ai2 || {};
+    // Fixed tab titles — never combine into one sheet.
+    return [
+      {
+        title: "AI-1 Sections",
+        kind: "test_pack",
+        values: chunkSheetCellValues(ai1.values || []),
+        color: { red: 0.12, green: 0.35, blue: 0.55 },
+        resultRuns: ai1.result_runs || []
+      },
+      {
+        title: "AI-2 Contents",
+        kind: "test_pack",
+        values: chunkSheetCellValues(ai2.values || []),
+        color: { red: 0.18, green: 0.48, blue: 0.32 },
+        resultRuns: ai2.result_runs || []
+      }
+    ];
+  }
+
+  function findResultRowIndex(values) {
+    var rows = values || [];
+    for (var i = 0; i < rows.length; i++) {
+      var field = String((rows[i] && rows[i][0]) || "");
+      if (field === "Result" || field.indexOf("Result") === 0) return i;
+    }
+    return -1;
+  }
+
+  function mergeOutlineRuns(runs) {
+    var merged = [];
+    (runs || []).forEach(function (pair) {
+      var text = "";
+      var bold = false;
+      if (Array.isArray(pair)) {
+        text = pair[0] != null ? String(pair[0]) : "";
+        bold = !!pair[1];
+      } else if (pair && typeof pair === "object") {
+        text = pair.text != null ? String(pair.text) : "";
+        bold = !!pair.bold;
+      }
+      if (!text) return;
+      if (merged.length && merged[merged.length - 1].bold === bold) {
+        merged[merged.length - 1].text += text;
+      } else {
+        merged.push({ text: text, bold: bold });
+      }
+    });
+    return merged;
+  }
+
+  function textFormatRunsFromOutline(runs) {
+    // Google Sheets textFormatRuns: startIndex + format; next run ends previous.
+    var merged = mergeOutlineRuns(runs);
+    var out = [];
+    var cursor = 0;
+    merged.forEach(function (seg) {
+      out.push({
+        startIndex: cursor,
+        format: { bold: !!seg.bold, fontFamily: "Consolas", fontSize: 10 }
+      });
+      cursor += seg.text.length;
+    });
+    return { runs: out, plain: merged.map(function (s) { return s.text; }).join("") };
+  }
+
+  function formatResultOutlineBoldRequests(sheetId, rowIndex, runs) {
+    if (sheetId == null || rowIndex < 0 || !(runs && runs.length)) return [];
+    var built = textFormatRunsFromOutline(runs);
+    if (!built.runs.length || !built.plain) return [];
+    return [{
+      updateCells: {
+        start: { sheetId: sheetId, rowIndex: rowIndex, columnIndex: 1 },
+        rows: [{
+          values: [{
+            userEnteredValue: { stringValue: built.plain },
+            userEnteredFormat: {
+              wrapStrategy: "WRAP",
+              verticalAlignment: "TOP",
+              textFormat: { fontFamily: "Consolas", fontSize: 10, bold: false }
+            },
+            textFormatRuns: built.runs
+          }]
+        }],
+        fields: "userEnteredValue,userEnteredFormat,textFormatRuns"
+      }
+    }];
+  }
+
+  function writeSheetValuesInChunks(token, spreadsheetId, sheetTitle, values) {
+    // Keep each values.batchUpdate payload modest (cell count × size).
+    var ROWS_PER_WRITE = 40;
+    var safeTitle = "'" + String(sheetTitle).replace(/'/g, "''") + "'";
+    var chain = Promise.resolve();
+    var rows = values || [];
+    for (var start = 0; start < rows.length; start += ROWS_PER_WRITE) {
+      (function (from) {
+        var chunk = rows.slice(from, from + ROWS_PER_WRITE);
+        var a1row = from + 1; // 1-based
+        chain = chain.then(function () {
+          return valuesBatchUpdate(token, spreadsheetId, [{
+            range: safeTitle + "!A" + a1row,
+            values: chunk
+          }]);
+        });
+      })(start);
+    }
+    return chain;
+  }
+
+  function assertTwoPackTabs(token, spreadsheetId, expectedTitles) {
+    return fetch(
+      "https://sheets.googleapis.com/v4/spreadsheets/" + encodeURIComponent(spreadsheetId) +
+        "?fields=sheets.properties",
+      { headers: { Authorization: "Bearer " + token } }
+    ).then(function (res) { return res.json(); }).then(function (meta) {
+      var sheets = (meta && meta.sheets) || [];
+      var titles = sheets.map(function (s) {
+        return s && s.properties && s.properties.title;
+      }).filter(Boolean);
+      if (titles.length < 2) {
+        throw new Error("Google Sheet tab setup failed (need 2 tabs, got " + titles.length + ")");
+      }
+      expectedTitles.forEach(function (t) {
+        if (titles.indexOf(t) < 0) {
+          throw new Error("Missing sheet tab: " + t + " (have: " + titles.join(", ") + ")");
+        }
+      });
+      return titles;
+    });
+  }
+
+  function exportTestPacks(opts) {
+    opts = opts || {};
+    var cfg = opts.config || {};
+    var clientId = getClientId(cfg);
+    if (!clientId) {
+      return Promise.reject(new Error("GOOGLE_CLIENT_ID is not set in .env"));
+    }
+    var packs = opts.packs || {};
+    if (!packs.ai1 || !packs.ai2) {
+      return Promise.reject(new Error("Missing AI-1 / AI-2 export packs"));
+    }
+    var title = String(opts.title || "BBS-CMS test packs").replace(/[\\/:*?"<>|]/g, "-").slice(0, 120);
+    var onStatus = typeof opts.onStatus === "function" ? opts.onStatus : function () {};
+    var onProgress = typeof opts.onProgress === "function" ? opts.onProgress : function () {};
+    // Same spreadsheet file, TWO separate tabs (never merged).
+    var plan = buildSeparateTestPackTabs(packs);
+    if (plan.length !== 2) {
+      return Promise.reject(new Error("Internal error: expected 2 export tabs"));
+    }
+    var writeSteps = plan.reduce(function (n, tab) {
+      return n + Math.max(1, Math.ceil((tab.values || []).length / 40));
+    }, 0);
+    var stepTotal = 5 + writeSteps + 1;
+    var stepIndex = 0;
+
+    function emit(label, phase, active) {
+      stepIndex += 1;
+      var soft = Math.min(99, Math.round((stepIndex / stepTotal) * 1000) / 10);
+      var payload = {
+        index: stepIndex,
+        total: stepTotal,
+        soft_pct: soft,
+        label: label,
+        phase: phase || "",
+        active: active || []
+      };
+      onStatus(label);
+      onProgress(payload);
+    }
+
+    emit("Google 接続中…", "auth");
+    return requestAccessToken(clientId, false).then(function (token) {
+      emit("Drive フォルダ準備…", "folder");
+      return ensureRootFolder(token, getFolderId(cfg)).then(function (parentId) {
+        emit("スプレッドシート作成…", "create");
+        return driveCreate(token, title, DRIVE_SHEET_MIME, parentId).then(function (spreadsheetId) {
+          var titles = plan.map(function (t) { return t.title; });
+          emit("タブ構成（AI-1 / AI-2 分離）…", "tabs", titles);
+          return setupSheetsStructure(token, spreadsheetId, titles).then(function (sheetIds) {
+            return assertTwoPackTabs(token, spreadsheetId, titles).then(function () {
+              var chain = Promise.resolve();
+              plan.forEach(function (tab, i) {
+                chain = chain.then(function () {
+                  emit(
+                    "書込中: " + tab.title + "（タブ " + (i + 1) + "/2）",
+                    "write",
+                    [tab.title]
+                  );
+                  return writeSheetValuesInChunks(token, spreadsheetId, tab.title, tab.values);
+                });
+              });
+              return chain.then(function () {
+                emit("書式設定…", "format", titles.slice());
+                var fmt = [];
+                plan.forEach(function (tab, i) {
+                  var sid = sheetIds[i];
+                  if (sid == null) return;
+                  fmt = fmt.concat(formatTestPackSheetRequests(sid, (tab.values || []).length, tab.color));
+                });
+                return sheetsBatchUpdate(token, spreadsheetId, fmt).then(function () {
+                  // Bold page names + main section keys inside Result outline cells.
+                  var boldReqs = [];
+                  plan.forEach(function (tab, i) {
+                    var sid = sheetIds[i];
+                    if (sid == null) return;
+                    var ridx = findResultRowIndex(tab.values);
+                    boldReqs = boldReqs.concat(
+                      formatResultOutlineBoldRequests(sid, ridx, tab.resultRuns)
+                    );
+                  });
+                  var afterBold = boldReqs.length
+                    ? sheetsBatchUpdate(token, spreadsheetId, boldReqs)
+                    : Promise.resolve();
+                  return afterBold.then(function () {
+                    onProgress({
+                      index: stepTotal,
+                      total: stepTotal,
+                      soft_pct: 100,
+                      label: "完了（AI-1 / AI-2 別タブ）",
+                      phase: "done",
+                      active: []
+                    });
+                    return {
+                      spreadsheetId: spreadsheetId,
+                      spreadsheetUrl: "https://docs.google.com/spreadsheets/d/" + spreadsheetId,
+                      rowCount: plan.reduce(function (n, t) { return n + (t.values || []).length; }, 0),
+                      tabs: titles
+                    };
+                  });
+                });
+              });
+            });
+          });
+        });
+      });
+    });
+  }
+
   global.BbsV2Sheets = {
     isConfigured: isConfigured,
     hasSession: hasSession,
     clearSession: clearSession,
     exportSectionRows: exportSectionRows,
+    exportTestPacks: exportTestPacks,
     preload: loadGis,
     ROOT_FOLDER_NAME: ROOT_FOLDER_NAME
   };

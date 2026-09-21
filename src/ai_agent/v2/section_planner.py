@@ -13,26 +13,14 @@ from ai_agent.models.types import ChatMessage
 from ai_agent.pipeline.ai_stack import extra_body_for, writer_max_tokens_for
 from ai_agent.v2.blueprint import refresh_blueprint_stats
 from ai_agent.v2.hearing_writer_adapter import v2_hearing_to_production
+from ai_agent.v2.page_catalog import sections_for_page_type
+from ai_agent.v2.prompt_packs import default_ai1_planner_for_type
 from ai_agent.v2.section_rules import enrich_page_sections
 
 VALID_MODES = frozenset({"generate", "facts", "expand", "shell", "blank"})
 
-PLANNER_SYSTEM = """You are BBS satellite WordPress section planner (AI-1).
-Plan section BLOCK STRUCTURE for AI-2 to write copy later. You do NOT write website content.
-
-Rules:
-- Output a single JSON object only. No markdown, no explanation.
-- Shape: {"sections": [{"id": "snake_case", "label": "short English label", "mode": "generate|facts|expand|shell|blank", "rule": "short Japanese instruction for AI-2"}]}
-- NEVER output final page copy, paragraphs, headings, or customer-facing text.
-- NEVER use keys: text, content, body, copy, html, paragraphs — only id, label, mode, rule.
-- rule: brief instruction for AI-2 (max ~200 chars), not the final文案.
-- section id: unique on this page, snake_case, 2–24 chars [a-z0-9_]
-- mode blank: when page must stay empty (menu blank directive)
-- mode shell: listing-only pages (blog/sitemap) — structure only
-- mode facts: tell AI-2 to use exact hearing facts (names/prices/hours)
-- Do not add pages — only sections for the given page
-- 2–8 sections per page unless leave_blank (then 1 section mode blank is ok)
-"""
+# Fallback only — lab should pass the per-type English AI-1 pack.
+PLANNER_SYSTEM = default_ai1_planner_for_type("type3")
 
 FORBIDDEN_SECTION_KEYS = frozenset({"text", "content", "body", "copy", "html", "paragraphs", "body_paragraphs"})
 MAX_RULE_LEN = 400
@@ -42,7 +30,7 @@ PLANNER_PAGE_TIMEOUT_SEC = 35.0
 PLANNER_EXPECTED_CHARS = 650
 PLANNER_STREAM_EMIT_CHARS = 28
 PLANNER_STREAM_EMIT_SEC = 0.2
-SHELL_PAGE_TYPES = frozenset({"blog", "sitemap", "privacy", "column", "seo", "tag", "news"})
+SHELL_PAGE_TYPES = frozenset({"blog", "sitemap", "privacy", "column", "seo", "tag", "news", "ai_blog"})
 SHELL_ROLES = frozenset({"shell"})
 
 ProgressCallback = Any  # async (slug, index, total, phase, **extra) -> None
@@ -84,6 +72,7 @@ def _apply_template_sections(page: dict[str, Any], hearing: dict[str, Any]) -> N
 
 
 def _compact_hearing_for_planner(hearing: dict[str, Any]) -> dict[str, Any]:
+    """Compact hearing facts for AI-1 — include page composition ② flags + page-add slots."""
     prod = v2_hearing_to_production(hearing)
     keys = (
         "business_name",
@@ -104,12 +93,88 @@ def _compact_hearing_for_planner(hearing: dict[str, Any]) -> dict[str, Any]:
         "page_directives",
         "tone",
         "target",
+        "faq_items",
+        "reviews",
+        "recruit",
+        "ai_blog",
+        "production_kind",
+        "ai_support",
+        "existing_site_copy",
+        "existing_url",
     )
     compact: dict[str, Any] = {}
     for key in keys:
         val = prod.get(key)
         if val:
             compact[key] = val
+    flags = hearing.get("flags") if isinstance(hearing.get("flags"), dict) else {}
+    compact["flags"] = {
+        "include_reviews": bool(flags.get("include_reviews")),
+        "include_recruit": bool(flags.get("include_recruit")),
+        "include_ai_blog": bool(flags.get("include_ai_blog")),
+        "blog": bool(flags.get("blog")),
+        "access_page": bool(flags.get("access_page")),
+        "form": bool(flags.get("form")),
+        "top_inherit": bool(flags.get("top_inherit")),
+    }
+    # Page-add slots (page composition ③) — type + seeds only
+    page_slots = []
+    for slot in hearing.get("pages") or []:
+        if not isinstance(slot, dict):
+            continue
+        page_slots.append(
+            {
+                "type": slot.get("type"),
+                "items": (slot.get("items") or [])[:8],
+            }
+        )
+    if page_slots:
+        compact["page_add_slots"] = page_slots[:20]
+    if hearing.get("reviews"):
+        compact["reviews"] = hearing.get("reviews")
+    if hearing.get("recruit"):
+        compact["recruit"] = hearing.get("recruit")
+    if hearing.get("ai_blog"):
+        compact["ai_blog"] = hearing.get("ai_blog")
+    project = hearing.get("project") if isinstance(hearing.get("project"), dict) else {}
+    if project.get("production_kind"):
+        compact["production_kind"] = project.get("production_kind")
+    if project.get("purpose"):
+        compact["site_purpose"] = project.get("purpose")
+    if project.get("domain"):
+        compact["public_domain"] = project.get("domain")
+    if project.get("site_category") or hearing.get("site_category"):
+        compact["site_category"] = project.get("site_category") or hearing.get("site_category")
+    if project.get("industry") or project.get("industry_category"):
+        compact["industry"] = project.get("industry") or project.get("industry_category")
+    if project.get("ai_support"):
+        compact["ai_support"] = project.get("ai_support")
+    if project.get("existing_site_copy"):
+        compact["existing_site_copy"] = project.get("existing_site_copy")
+    if project.get("existing_url"):
+        compact["existing_url"] = project.get("existing_url")
+    brief = hearing.get("site_brief") if isinstance(hearing.get("site_brief"), dict) else project.get("site_brief")
+    if isinstance(brief, dict) and brief:
+        compact["site_brief"] = {
+            k: brief.get(k)
+            for k in ("category", "purpose", "production_kind", "audience", "goal", "domain")
+            if brief.get(k)
+        }
+        cat = str(brief.get("category") or compact.get("site_category") or "")
+        if cat:
+            from ai_agent.v2.category_guard import category_playbook_lines
+
+            compact["category_playbook"] = category_playbook_lines(cat)
+    note = str(hearing.get("top_inherit_note") or "").strip()
+    if note:
+        compact["top_inherit_note"] = note
+    live = hearing.get("live_site_analysis") if isinstance(hearing.get("live_site_analysis"), dict) else None
+    if live and live.get("ok"):
+        compact["live_site_structure"] = {
+            "nav": (live.get("nav_union") or [])[:12],
+            "policy": live.get("policy") or {"copy": "forbidden"},
+            "note": "Use for section/item structure only. Never copy live body text. Hearing facts win.",
+        }
     return compact
 
 
@@ -157,6 +222,105 @@ def _normalize_section(row: dict[str, Any], *, page: dict[str, Any]) -> dict[str
     return {"id": sid, "label": label, "rule": rule, "mode": mode}
 
 
+def _is_forbidden_extra_section(section_id: str, page_type: str) -> bool:
+    """Drop AI-1 invented SEO/tag slots on non SEO/tag pages (e.g. concept seo_intro_*)."""
+    sid = str(section_id or "").strip().lower()
+    ptype = str(page_type or "").strip()
+    if ptype in {"seo", "tag"}:
+        return False
+    if sid.startswith("seo_") or sid.startswith("tag_"):
+        return True
+    if sid in {"brand_origin", "aftercare_philosophy", "one_stop_service", "lead_concept"}:
+        return True
+    # Layout-word invent ids (hero = layout, not structure)
+    if sid == "hero" or sid.startswith("hero_"):
+        return True
+    # Legacy flat TOP slots replaced by nested top_catchphrase / business_info / cta
+    if sid.startswith("business_info_") or sid in {
+        "hero_brand_name",
+        "hero_catchcopy",
+        "hero_subcopy",
+        "hero_focus_keywords",
+        "hero_cta_label",
+        "hero_cta_url",
+        "lead_heading",
+        "lead_body",
+        "services_teaser_heading",
+        "services_teaser_items",
+        "selling_points_heading",
+        "selling_points_points",
+        "cta_label",
+        "cta_phone",
+        "cta_url",
+        "cta_line_url",
+        "cta_methods",
+    }:
+        return True
+    # Legacy flat invent names replaced by nested concept/service items.
+    if sid in {"points", "service_list"} and ptype in {
+        "コンセプト",
+        "concept",
+        "サービス",
+        "service",
+    }:
+        return True
+    return False
+
+
+def finalize_planned_sections(
+    planned: list[dict[str, str]],
+    page: dict[str, Any],
+    *,
+    hearing: dict[str, Any] | None = None,
+) -> list[dict[str, str]]:
+    """Keep catalog slots (facts modes), drop invented extras, preserve allowed AI-1 adds."""
+    ptype = str(page.get("type") or "").strip()
+    # Prefer blueprint sections already expanded from THIS hearing (same output every run).
+    existing = [dict(s) for s in (page.get("sections") or []) if isinstance(s, dict) and s.get("id")]
+    if existing:
+        catalog = existing
+    else:
+        catalog = sections_for_page_type(ptype, page=page, hearing=hearing)
+    filtered = [
+        dict(s)
+        for s in planned
+        if isinstance(s, dict) and s.get("id") and not _is_forbidden_extra_section(str(s["id"]), ptype)
+    ]
+    by_id = {str(s["id"]): s for s in filtered}
+    out: list[dict[str, str]] = []
+    for cat in catalog:
+        sid = str(cat.get("id") or "")
+        if not sid:
+            continue
+        if sid in by_id:
+            sec = dict(by_id.pop(sid))
+            # Catalog facts/shell/blank modes win so AI-1 cannot blank a known fact slot.
+            cat_mode = str(cat.get("mode") or "").strip()
+            if cat_mode in {"facts", "shell", "blank"}:
+                sec["mode"] = cat_mode
+            if cat_mode == "facts" and not str(sec.get("rule") or "").strip():
+                sec["rule"] = str(cat.get("rule") or "")
+            if cat.get("fields") and not sec.get("fields"):
+                sec["fields"] = list(cat["fields"])
+            # Keep catalog label/rule shape when AI-1 omits nested fields metadata.
+            if cat.get("label") and not str(sec.get("label") or "").strip():
+                sec["label"] = str(cat.get("label") or sid)
+            out.append(sec)
+        else:
+            row = {
+                "id": sid,
+                "label": str(cat.get("label") or sid),
+                "mode": str(cat.get("mode") or "generate"),
+                "rule": str(cat.get("rule") or ""),
+            }
+            if cat.get("fields"):
+                row["fields"] = list(cat["fields"])
+            out.append(row)
+    for sid, sec in by_id.items():
+        out.append(sec)
+    return out
+
+
 def parse_planner_sections(content: str, *, page: dict[str, Any]) -> list[dict[str, str]]:
     data = _loads_planner_json(content)
     raw_sections = data.get("sections") if isinstance(data, dict) else None
@@ -181,7 +345,7 @@ def parse_planner_sections(content: str, *, page: dict[str, Any]) -> list[dict[s
         )
     if not out:
         raise ValueError("AI-1 returned no valid sections")
-    return out
+    return finalize_planned_sections(out, page)
 
 
 def _page_context_block(page: dict[str, Any], hearing: dict[str, Any]) -> str:
@@ -198,6 +362,27 @@ def _page_context_block(page: dict[str, Any], hearing: dict[str, Any]) -> str:
         lines.append("leave_blank: true — output blank mode sections only")
     if page.get("reference_url"):
         lines.append(f"reference_url: {page.get('reference_url')}")
+    live = page.get("live_structure") if isinstance(page.get("live_structure"), dict) else None
+    if live:
+        lines.append(
+            "live_site_structure (hint only — do NOT copy live body text; hearing facts win): "
+            + json.dumps(
+                {
+                    "pattern": live.get("pattern"),
+                    "suggested_point_count": live.get("suggested_point_count"),
+                    "suggested_faq_count": live.get("suggested_faq_count"),
+                    "section_headings": (live.get("section_headings") or [])[:6],
+                    "point_title_hints": (live.get("point_title_hints") or [])[:5],
+                    "faq_question_headings": (live.get("faq_question_headings") or [])[:5],
+                },
+                ensure_ascii=False,
+            )[:900]
+        )
+    if page.get("live_topic_hints"):
+        lines.append(
+            "live_topic_hints (rewrite from hearing only): "
+            + " | ".join(str(x)[:60] for x in (page.get("live_topic_hints") or [])[:6])
+        )
     if page.get("seo_overview"):
         lines.append(f"seo_overview: {page.get('seo_overview')}")
     if page.get("tag_instruction"):
@@ -214,23 +399,53 @@ def _page_context_block(page: dict[str, Any], hearing: dict[str, Any]) -> str:
             lines.append(f"{key}: {val[:300]}")
     template = page.get("sections") or []
     if template:
-        ids = [str(s.get("id")) for s in template if isinstance(s, dict)]
-        lines.append("template_hint_ids (may adapt): " + ", ".join(ids))
+        from ai_agent.v2.page_catalog import nested_fields_for_section
+
+        lines.append(
+            "template_hint_ids (REQUIRED — include every id; do not invent seo_/brand_origin/hero ids):"
+        )
+        for sec in template:
+            if not isinstance(sec, dict):
+                continue
+            sid = str(sec.get("id") or "").strip()
+            if not sid:
+                continue
+            mode = str(sec.get("mode") or "generate")
+            fields = nested_fields_for_section(sec)
+            if fields:
+                shape = "{" + ",".join(fields) + "}"
+                lines.append(f"  - {sid} ({mode}) nested={shape}")
+            else:
+                lines.append(f"  - {sid} ({mode}) string")
+        lines.append(
+            "Plan these section ids for THIS page. Use the nested shapes listed above."
+        )
     return "\n".join(lines)
 
 
-def _planner_messages(hearing: dict[str, Any], page: dict[str, Any]) -> list[ChatMessage]:
+def _planner_messages(
+    hearing: dict[str, Any],
+    page: dict[str, Any],
+    *,
+    system_prompt: str | None = None,
+) -> list[ChatMessage]:
     compact = _compact_hearing_for_planner(hearing)
+    ptype = str(hearing.get("production_type") or "").strip() or "unknown"
     user = (
-        "Plan section blocks for this satellite WordPress page.\n\n"
+        f"Plan section blocks for this WordPress page from THIS hearing sheet only.\n"
+        f"Hearing production_type: {ptype}\n"
+        f"Do not invent facts. Output id, label, mode, rule only — no page copy.\n"
+        f"Type rules are already in the system prompt.\n\n"
         "=== PAGE ===\n"
         + _page_context_block(page, hearing)
         + "\n\n=== HEARING FACTS (compact) ===\n"
         + json.dumps(compact, ensure_ascii=False, indent=2)
-        + '\n\nReturn JSON only (structure — NO page copy): {"sections": [{"id":"...","label":"...","mode":"...","rule":"short instruction for AI-2"}]}'
+        + '\n\nReturn JSON only (structure — NO page copy): '
+        '{"sections": [{"id":"...","label":"...","mode":"...","rule":"short English instruction for AI-2 from hearing facts"}]}'
     )
+    system = (system_prompt or "").strip() or PLANNER_SYSTEM
     return [
-        ChatMessage(role="system", content=PLANNER_SYSTEM),
+        ChatMessage(role="system", content=system),
         ChatMessage(role="user", content=user),
     ]
 
@@ -286,8 +501,9 @@ async def plan_page_sections(
     hearing: dict[str, Any],
     page: dict[str, Any],
     on_chars: CharDeltaCallback | None = None,
+    system_prompt: str | None = None,
 ) -> list[dict[str, str]]:
-    messages = _planner_messages(hearing, page)
+    messages = _planner_messages(hearing, page, system_prompt=system_prompt)
     max_tokens = min(writer_max_tokens_for(planner), 4096)
     chat_kwargs: dict[str, Any] = {}
     extra = dict(extra_body_for(planner) or {})
@@ -330,7 +546,7 @@ async def plan_page_sections(
                     ChatMessage(role="assistant", content=raw[:3000]),
                     ChatMessage(
                         role="user",
-                        content='Fix JSON. Return only: {"sections": [{"id":"hero","label":"Hero","mode":"generate","rule":"..."}]}',
+                        content='Fix JSON. Return only: {"sections": [{"id":"top_catchphrase","label":"TOP catchphrase","mode":"generate","rule":"..."}]}',
                     ),
                 ]
                 continue
@@ -348,10 +564,12 @@ async def enrich_blueprint_with_ai(
     blueprint: dict[str, Any],
     planner: str,
     progress: ProgressCallback | None = None,
+    system_prompt: str | None = None,
 ) -> dict[str, Any]:
     """Replace template sections with AI-1 planned sections (parallel LLM for nav content pages)."""
     llm_jobs: list[tuple[dict[str, Any], str]] = []
     template_count = 0
+    planner_system = (system_prompt or "").strip() or PLANNER_SYSTEM
 
     for key, group in (("pages", "nav"), ("seo_pages", "seo"), ("tag_pages", "tag")):
         for page in blueprint.get(key) or []:
@@ -497,6 +715,7 @@ async def enrich_blueprint_with_ai(
                         hearing=hearing,
                         page=page,
                         on_chars=on_chars,
+                        system_prompt=planner_system,
                     ),
                     timeout=PLANNER_PAGE_TIMEOUT_SEC,
                 )

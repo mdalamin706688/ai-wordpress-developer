@@ -19,6 +19,27 @@ def _yes(value: str) -> bool:
     return v in {"はい", "yes", "有", "あり", "true", "1"}
 
 
+def _parse_review_items(row: dict[str, str], *, max_items: int = 10) -> list[dict[str, Any]]:
+    """口コミ表示1..10 + 口コミ表示名1..10 (page composition ② — AVA–AVT)."""
+    skip_text = {"表示しない", "しない", "なし", "無し", "ない", "no", "-"}
+    items: list[dict[str, Any]] = []
+    for n in range(1, max_items + 1):
+        text = _s(row.get(f"口コミ表示{n}"))
+        display_name = _s(row.get(f"口コミ表示名{n}"))
+        if text in skip_text:
+            continue
+        if not text and not display_name:
+            continue
+        items.append({"n": n, "text": text, "display_name": display_name})
+    return items
+
+
+def _is_recruit_kind(value: str) -> bool:
+    """制作種別 contains リクルート (page composition ② — AVU)."""
+    v = _s(value)
+    return "リクルート" in v or "求人" in v
+
+
 def _top_inherit(value: str) -> bool:
     """True only when hearing asks to inherit existing TOP (not 踏襲しない)."""
     v = _s(value)
@@ -27,6 +48,52 @@ def _top_inherit(value: str) -> bool:
     if "しない" in v or "非踏襲" in v or "踏襲無し" in v or "踏襲なし" in v:
         return False
     return v.startswith("踏襲") or "踏襲する" in v
+
+
+# Local / peninsula names often appear in 売り・備考 while 地域 is prefecture-only.
+_AREA_LOCAL_MARKERS = (
+    "島原半島",
+    "島原",
+    "雲仙",
+    "諫早",
+    "佐世保",
+    "時津",
+    "長与",
+    "大村",
+)
+
+
+def _compose_area(
+    *,
+    region: str,
+    address: str = "",
+    text_blobs: list[str] | None = None,
+) -> str:
+    """Build a display area like 島原半島・長崎 (not prefecture-only when hearing adds locality)."""
+    region = _s(region)
+    address = _s(address)
+    blob = " ".join([region, address, *(_s(t) for t in (text_blobs or []) if _s(t))])
+
+    parts: list[str] = []
+    for marker in _AREA_LOCAL_MARKERS:
+        if marker in blob:
+            parts.append(marker)
+            break
+
+    pref = region
+    if not pref:
+        # Pull prefecture short name from address when 地域 cell is empty.
+        m = re.search(r"([^\s　]{2,3})県", address)
+        if m:
+            pref = m.group(1)
+    pref = pref.replace("県", "").replace("府", "").replace("都", "") if pref else ""
+    # Avoid "長崎県長崎" style; keep short prefecture / city label from 地域.
+    if pref and pref not in parts and not any(pref in p for p in parts):
+        parts.append(pref)
+
+    if parts:
+        return "・".join(parts)
+    return region or pref
 
 
 def _read_csv_matrix(raw: str) -> tuple[list[str], list[str]]:
@@ -248,6 +315,14 @@ def parse_hearing_sheet(raw: str) -> dict[str, Any]:
         "top_inherit": _top_inherit(row.get("TOP踏襲")),
     }
 
+    review_items = _parse_review_items(row)
+    production_kind = _s(row.get("制作種別"))
+    ai_support_raw = _s(row.get("AIサポート"))
+    # page composition ② conditionals
+    flags["include_reviews"] = bool(review_items)
+    flags["include_recruit"] = _is_recruit_kind(production_kind)
+    flags["include_ai_blog"] = _yes(ai_support_raw)
+
     blog_urls = [_s(row.get(f"ブログURL{i}")) for i in range(1, 6)]
     blog_urls = [u for u in blog_urls if u]
 
@@ -269,6 +344,17 @@ def parse_hearing_sheet(raw: str) -> dict[str, Any]:
         "writing_days": _s(row.get("ライティング日数")),
     }
 
+    store = _parse_store(row)
+    composed_area = _compose_area(
+        region=_s(row.get("地域")),
+        address=_s(store.get("address")),
+        text_blobs=[
+            writing_guidance.get("selling_points") or "",
+            writing_guidance.get("writing_notes") or "",
+            writing_guidance.get("remarks") or "",
+        ],
+    )
+
     hearing: dict[str, Any] = {
         "version": 2,
         "production_type": ptype.value,
@@ -286,12 +372,14 @@ def parse_hearing_sheet(raw: str) -> dict[str, Any]:
             "purpose": _s(row.get("サイト制作目的")),
             "industry": _s(row.get("業種")),
             "industry_category": _s(row.get("業種カテゴリー")),
-            "area": _s(row.get("地域")),
+            "area": composed_area,
             "writing_request": _s(row.get("ライティング要望")),
             "design_request": _s(row.get("デザイン要望")),
+            "production_kind": production_kind,
+            "ai_support": ai_support_raw,
         },
         "flags": flags,
-        "store": _parse_store(row),
+        "store": store,
         "pages": _parse_page_slots(row),
         "existing_pages": _parse_existing_pages(row),
         "form_pages": _parse_named_url_slots(row, prefix="フォームURL", existing_suffix="既存フォーム"),
@@ -307,6 +395,17 @@ def parse_hearing_sheet(raw: str) -> dict[str, Any]:
             or _s(row.get("プライバシーポリシーURL")),
             "has_policy": _yes(row.get("プライバシーポリシーはありますか？")),
         },
+        "reviews": review_items,
+        "recruit": {
+            "enabled": flags["include_recruit"],
+            "production_kind": production_kind,
+            "keywords": _s(row.get("その他 (リクルート > 求人キーワード)")),
+            "message": _s(row.get("その他 (リクルート > 求職者に伝えたいこと)")),
+        },
+        "ai_blog": {
+            "enabled": flags["include_ai_blog"],
+            "ai_support": ai_support_raw,
+        },
         "seo_pages": _parse_seo_pages(row),
         "tag_pages": _parse_tag_pages(row),
         "dynamic_pages": _parse_dynamic_pages(row),
@@ -321,6 +420,7 @@ def parse_hearing_sheet(raw: str) -> dict[str, Any]:
     }
 
     from ai_agent.v2.hearing_directives import parse_page_directives
+    from ai_agent.v2.site_category import attach_site_category
 
     wg = hearing.get("writing_guidance") or {}
     hearing["page_directives"] = parse_page_directives(
@@ -329,4 +429,4 @@ def parse_hearing_sheet(raw: str) -> dict[str, Any]:
         pages=list(hearing.get("pages") or []),
         reference_sites=list(hearing.get("reference_sites") or []),
     )
-    return hearing
+    return attach_site_category(hearing)

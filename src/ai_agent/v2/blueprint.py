@@ -27,7 +27,9 @@ TYPE3_STANDARD_NAV_SLUGS = (
     "menu",
     "access",
     "blog",
-    "reviews",
+    "reviews",  # conditional (page composition ②)
+    "recruit",  # conditional (page composition ②)
+    "ai-blog",  # conditional (page composition ②)
     "contact",
     "sitemap",
     "privacy",
@@ -160,30 +162,8 @@ def inject_missing_type3_nav_pages(blueprint: dict[str, Any], hearing: dict[str,
     name = _site_name(hearing)
     clone = str(blueprint.get("clone_mode") or _default_clone_for_hearing(hearing))
     before = len(pages)
-    _append_access_page(hearing, pages, seen, name=name, clone=clone)
-    _append_blog_page(hearing, pages, seen, name=name, clone=clone)
-    _append_reviews_page(hearing, pages, seen, name=name, clone=clone)
-    _append_contact_page(hearing, pages, seen, name=name, clone=clone)
-    _append_utility_shell_page(
-        pages=pages,
-        seen_slugs=seen,
-        page_id="sitemap",
-        slug="sitemap",
-        nav_label="サイトマップ",
-        page_type="sitemap",
-        name=name,
-        clone=clone,
-    )
-    _append_utility_shell_page(
-        pages=pages,
-        seen_slugs=seen,
-        page_id="privacy",
-        slug="privacy",
-        nav_label="プライバシーポリシー",
-        page_type="privacy",
-        name=name,
-        clone=clone,
-    )
+    _ensure_must_pages(hearing, pages, seen, name=name, clone=clone)
+    _append_conditional_pages(hearing, pages, seen, name=name, clone=clone)
     _append_utility_shell_page(
         pages=pages,
         seen_slugs=seen,
@@ -193,6 +173,7 @@ def inject_missing_type3_nav_pages(blueprint: dict[str, Any], hearing: dict[str,
         page_type="column",
         name=name,
         clone=clone,
+        hearing=hearing,
     )
     if len(pages) <= before:
         return False
@@ -383,6 +364,7 @@ def _append_hearing_pages(
             slug = f"{slug}-{slot.get('slot')}"
         seen_slugs.add(slug)
         label = str(slot.get("label") or ptype)
+        seeds = list(slot.get("items") or [])
         pages.append(
             {
                 "id": slug,
@@ -392,13 +374,13 @@ def _append_hearing_pages(
                 "nav_label": label,
                 "title": f"{label}｜{name}",
                 "clone": clone,
-                "sections": sections_for_page_type(ptype),
+                "sections": sections_for_page_type(ptype, content_seeds=seeds, hearing=hearing),
                 "source": {
                     "kind": "hearing_page_slot",
                     "slot": slot.get("slot"),
                     "fields": [f"ページの追加{slot.get('slot')} (項目内容1..15)"],
                 },
-                "content_seeds": list(slot.get("items") or []),
+                "content_seeds": seeds,
             }
         )
 
@@ -426,7 +408,7 @@ def _append_access_page(
             "nav_label": "アクセス",
             "title": f"アクセス｜{name}",
             "clone": clone,
-            "sections": sections_for_page_type("access"),
+            "sections": sections_for_page_type("access", hearing=hearing),
             "source": {"kind": "store", "fields": ["単独店舗 (住所)", "単独店舗 (電話番号)"]},
             "content_seeds": [],
         }
@@ -453,13 +435,51 @@ def _append_blog_page(
             "nav_label": "ブログ",
             "title": f"ブログ｜{name}",
             "clone": clone,
-            "sections": sections_for_page_type("blog"),
+            "sections": sections_for_page_type("blog", hearing=hearing),
             "source": {"kind": "satellite_template", "fields": ["ブログはありますか"]},
             "content_seeds": [],
             "note": "Listing shell only — no individual posts generated.",
         }
     )
     seen_slugs.add("blog")
+
+
+_REVIEW_FLAG_ONLY = frozenset({"表示する", "表示", "あり", "有", "yes", "true", "1"})
+
+
+def _hearing_wants_reviews(hearing: dict[str, Any]) -> bool:
+    """page composition ② — 口コミ when 口コミ表示/表示名1..10 has any value."""
+    flags = hearing.get("flags") if isinstance(hearing.get("flags"), dict) else {}
+    if flags.get("include_reviews"):
+        return True
+    reviews = hearing.get("reviews") or []
+    return any(isinstance(r, dict) and (r.get("text") or r.get("display_name")) for r in reviews)
+
+
+def _hearing_wants_recruit(hearing: dict[str, Any]) -> bool:
+    """page composition ② — 求人 when 制作種別 is リクルート (or page-add already has recruit)."""
+    flags = hearing.get("flags") if isinstance(hearing.get("flags"), dict) else {}
+    if flags.get("include_recruit"):
+        return True
+    recruit = hearing.get("recruit") if isinstance(hearing.get("recruit"), dict) else {}
+    if recruit.get("enabled"):
+        return True
+    for slot in hearing.get("pages") or []:
+        if not isinstance(slot, dict):
+            continue
+        ptype = str(slot.get("type") or "")
+        if "リクルート" in ptype or "求人" in ptype:
+            return True
+    return False
+
+
+def _hearing_wants_ai_blog(hearing: dict[str, Any]) -> bool:
+    """page composition ② — AIブログ when AIサポート is あり."""
+    flags = hearing.get("flags") if isinstance(hearing.get("flags"), dict) else {}
+    if flags.get("include_ai_blog"):
+        return True
+    ai = hearing.get("ai_blog") if isinstance(hearing.get("ai_blog"), dict) else {}
+    return bool(ai.get("enabled"))
 
 
 def _append_reviews_page(
@@ -472,22 +492,167 @@ def _append_reviews_page(
 ) -> None:
     if "reviews" in seen_slugs:
         return
-    pages.append(
-        {
-            "id": "reviews",
-            "role": "utility",
-            "type": "お客様の声",
-            "slug": "reviews",
-            "nav_label": "お客様の声",
-            "title": f"お客様の声｜{name}",
-            "clone": clone,
-            "sections": sections_for_page_type("reviews"),
-            "source": {"kind": "satellite_template", "fields": ["口コミ表示1..10"]},
-            "content_seeds": [],
-        }
-    )
+    if not _hearing_wants_reviews(hearing):
+        return
+    review_bodies = [
+        r
+        for r in (hearing.get("reviews") or [])
+        if isinstance(r, dict)
+        and str(r.get("text") or "").strip()
+        and str(r.get("text") or "").strip() not in _REVIEW_FLAG_ONLY
+        and str(r.get("text") or "").strip()
+        not in {"表示しない", "しない", "なし", "無し", "ない", "no", "-"}
+    ]
+    seeds: list[str] = []
+    for r in review_bodies[:10]:
+        label = str(r.get("display_name") or "").strip()
+        text = str(r.get("text") or "").strip()
+        if label and text:
+            seeds.append(f"{label}: {text}")
+        elif text:
+            seeds.append(text)
+    page: dict[str, Any] = {
+        "id": "reviews",
+        "role": "utility",
+        "type": "お客様の声",
+        "slug": "reviews",
+        "nav_label": "お客様の声",
+        "title": f"お客様の声｜{name}",
+        "clone": clone,
+        "sections": sections_for_page_type("reviews", content_seeds=seeds, hearing=hearing),
+        "source": {"kind": "hearing_reviews", "fields": ["口コミ表示1..10", "口コミ表示名1..10"]},
+        "content_seeds": seeds,
+    }
+    # Flag-only 口コミ (e.g. 表示する) → keep page in nav, but force blank copy (no invented reviews).
+    if not seeds:
+        page["force_blank_copy"] = True
+        page["force_blank_reason"] = "口コミ本文なし（表示フラグのみ）— 全section空文字。創作禁止。"
+        for sec in page["sections"]:
+            if isinstance(sec, dict):
+                sec["mode"] = "blank"
+                sec["rule"] = page["force_blank_reason"]
+    pages.append(page)
     seen_slugs.add("reviews")
 
+
+def _append_recruit_page(
+    hearing: dict[str, Any],
+    pages: list[dict[str, Any]],
+    seen_slugs: set[str],
+    *,
+    name: str,
+    clone: str,
+) -> None:
+    if "recruit" in seen_slugs:
+        return
+    if not _hearing_wants_recruit(hearing):
+        return
+    # Skip if ページの追加 already created a recruit slug
+    if any(str(p.get("slug") or "") == "recruit" for p in pages if isinstance(p, dict)):
+        seen_slugs.add("recruit")
+        return
+    recruit = hearing.get("recruit") if isinstance(hearing.get("recruit"), dict) else {}
+    seeds: list[str] = []
+    for key in ("keywords", "message"):
+        val = str(recruit.get(key) or "").strip()
+        if val:
+            seeds.append(val)
+    pages.append(
+        {
+            "id": "recruit",
+            "role": "content",
+            "type": "リクルート (総合)",
+            "slug": "recruit",
+            "nav_label": "求人",
+            "title": f"求人｜{name}",
+            "clone": clone,
+            "sections": sections_for_page_type("リクルート (総合)", content_seeds=seeds, hearing=hearing),
+            "source": {"kind": "hearing_recruit", "fields": ["制作種別", "その他 (リクルート > …)"]},
+            "content_seeds": seeds,
+        }
+    )
+    seen_slugs.add("recruit")
+
+
+def _append_ai_blog_page(
+    hearing: dict[str, Any],
+    pages: list[dict[str, Any]],
+    seen_slugs: set[str],
+    *,
+    name: str,
+    clone: str,
+) -> None:
+    if "ai-blog" in seen_slugs or "ai_blog" in seen_slugs:
+        return
+    if not _hearing_wants_ai_blog(hearing):
+        return
+    pages.append(
+        {
+            "id": "ai-blog",
+            "role": "shell",
+            "type": "ai_blog",
+            "slug": "ai-blog",
+            "nav_label": "AIブログ",
+            "title": f"AIブログ｜{name}",
+            "clone": clone,
+            "sections": sections_for_page_type("ai_blog", hearing=hearing),
+            "source": {"kind": "hearing_ai_support", "fields": ["AIサポート"]},
+            "content_seeds": ["AIサポート: あり"],
+            "note": "Listing shell for AI-supported blog — individual posts not generated here.",
+        }
+    )
+    seen_slugs.add("ai-blog")
+
+
+def _append_conditional_pages(
+    hearing: dict[str, Any],
+    pages: list[dict[str, Any]],
+    seen_slugs: set[str],
+    *,
+    name: str,
+    clone: str,
+) -> None:
+    """page composition ② — reviews / recruit / AI blog only when hearing conditions match."""
+    _append_reviews_page(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_recruit_page(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_ai_blog_page(hearing, pages, seen_slugs, name=name, clone=clone)
+
+
+def _ensure_must_pages(
+    hearing: dict[str, Any],
+    pages: list[dict[str, Any]],
+    seen_slugs: set[str],
+    *,
+    name: str,
+    clone: str,
+) -> None:
+    """page composition ① — always include TOP(home), access, blog, form(contact), sitemap, privacy."""
+    # TOP/home is created by each type builder before this helper.
+    _append_access_page(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_blog_page(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_contact_page(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_utility_shell_page(
+        pages=pages,
+        seen_slugs=seen_slugs,
+        page_id="sitemap",
+        slug="sitemap",
+        nav_label="サイトマップ",
+        page_type="sitemap",
+        name=name,
+        clone=clone,
+        hearing=hearing,
+    )
+    _append_utility_shell_page(
+        pages=pages,
+        seen_slugs=seen_slugs,
+        page_id="privacy",
+        slug="privacy",
+        nav_label="プライバシーポリシー",
+        page_type="privacy",
+        name=name,
+        clone=clone,
+        hearing=hearing,
+    )
 
 def _append_contact_page(
     hearing: dict[str, Any],
@@ -517,7 +682,7 @@ def _append_contact_page(
             "nav_label": "お問い合わせ",
             "title": f"お問い合わせ｜{name}",
             "clone": clone,
-            "sections": sections_for_page_type("contact"),
+            "sections": sections_for_page_type("contact", hearing=hearing),
             "source": {"kind": "satellite_template", "fields": ["フォームはありますか", "CV先", "予約方法"]},
             "content_seeds": seeds,
         }
@@ -535,6 +700,7 @@ def _append_utility_shell_page(
     page_type: str,
     name: str,
     clone: str,
+    hearing: dict[str, Any] | None = None,
 ) -> None:
     if slug in seen_slugs:
         return
@@ -547,7 +713,7 @@ def _append_utility_shell_page(
             "nav_label": nav_label,
             "title": f"{nav_label}｜{name}",
             "clone": clone,
-            "sections": sections_for_page_type(page_type),
+            "sections": sections_for_page_type(page_type, hearing=hearing),
             "source": {"kind": "satellite_template", "fields": []},
             "content_seeds": [],
         }
@@ -555,28 +721,110 @@ def _append_utility_shell_page(
     seen_slugs.add(slug)
 
 
+def _unique_keep_order(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        v = str(raw or "").strip()
+        if not v or v in seen:
+            continue
+        seen.add(v)
+        out.append(v)
+    return out
+
+
+def _seo_angle_pool(hearing: dict[str, Any]) -> list[str]:
+    """Distinct landing angles for SEO pages when hearing slots are おまかせ/empty."""
+    pool: list[str] = []
+    for kw in hearing.get("focus_keywords") or []:
+        pool.append(str(kw).strip())
+    for page in hearing.get("pages") or []:
+        if not isinstance(page, dict):
+            continue
+        if str(page.get("type") or "") not in {"サービス", "service"}:
+            continue
+        for item in page.get("items") or []:
+            pool.append(str(item).strip())
+    # Light compounds so 15 SEO slots don't all share one opener when pool is small.
+    focus = [str(k).strip() for k in (hearing.get("focus_keywords") or []) if str(k).strip()]
+    services = []
+    for page in hearing.get("pages") or []:
+        if isinstance(page, dict) and str(page.get("type") or "") in {"サービス", "service"}:
+            services.extend(str(x).strip() for x in (page.get("items") or []) if str(x).strip())
+    area = str((hearing.get("project") or {}).get("area") or "").strip()
+    if not area:
+        addr = str((hearing.get("store") or {}).get("address") or "")
+        for token in ("島原半島", "長崎県", "長崎", "雲仙"):
+            if token in addr:
+                area = token
+                break
+    for kw in focus:
+        if area:
+            pool.append(f"{area}の{kw}")
+        for svc in services[:3]:
+            if kw != svc:
+                pool.append(f"{kw}・{svc}")
+    return _unique_keep_order(pool)
+
+
+def _seo_slot_primary(seo: dict[str, Any], *, n: int, angles: list[str]) -> tuple[str, str]:
+    """Return (primary_keyword, overview_hint) for one SEO slot."""
+    overview = str(seo.get("overview") or "").strip()
+    sections = seo.get("sections") if isinstance(seo.get("sections"), dict) else {}
+    for part in ("冒頭", "推1", "推2", "まとめ"):
+        block = sections.get(part) if isinstance(sections.get(part), dict) else {}
+        body = str((block or {}).get("内容") or "").strip()
+        if body:
+            # First short clause as primary when hearing supplied real copy.
+            primary = body.split("。")[0].strip()[:40] or body[:40]
+            return primary, overview or body[:120]
+    if overview:
+        primary = overview.split("。")[0].strip()[:40] or overview[:40]
+        return primary, overview
+    if angles:
+        return angles[(max(int(n or 1), 1) - 1) % len(angles)], overview
+    return "", overview
+
+
 def _build_seo_blueprints(hearing: dict[str, Any], *, name: str) -> list[dict[str, Any]]:
     seo_blueprints: list[dict[str, Any]] = []
+    angles = _seo_angle_pool(hearing)
+    focus = _unique_keep_order([str(k) for k in (hearing.get("focus_keywords") or [])])
     for seo in hearing.get("seo_pages") or []:
         if not isinstance(seo, dict):
             continue
         n = seo.get("n")
+        primary, overview = _seo_slot_primary(seo, n=int(n or 1), angles=angles)
+        seeds = _unique_keep_order([primary, *focus, *angles[:6]])
+        # Keep primary first; drop empties.
+        seeds = [s for s in seeds if s][:8]
+        label = primary or f"SEOページ{n}"
         seo_blueprints.append(
             {
                 "id": f"seo_{n}",
                 "role": "seo",
                 "type": "seo",
                 "slug": f"seo-{n}",
-                "nav_label": f"SEOページ{n}",
-                "title": f"SEOページ{n}｜{name}",
+                "nav_label": label,
+                "title": f"{label}｜{name}",
                 "clone": "bbs_seo_template",
-                "sections": sections_for_page_type("seo"),
+                "sections": sections_for_page_type("seo", hearing=hearing),
                 "source": {"kind": "seo_page", "n": n},
-                "content_seeds": list(hearing.get("focus_keywords") or []),
-                "seo_overview": str(seo.get("overview") or "").strip(),
+                "content_seeds": seeds,
+                "seo_primary_keyword": primary,
+                "seo_overview": overview,
                 "seo_sections": seo.get("sections") or {},
             }
         )
+    # Sibling primaries for uniqueness rules (exclude self at rule time).
+    primaries = [
+        str(p.get("seo_primary_keyword") or "").strip()
+        for p in seo_blueprints
+        if str(p.get("seo_primary_keyword") or "").strip()
+    ]
+    for page in seo_blueprints:
+        mine = str(page.get("seo_primary_keyword") or "").strip()
+        page["seo_sibling_primaries"] = [p for p in primaries if p != mine][:12]
     return seo_blueprints
 
 
@@ -601,7 +849,7 @@ def _build_tag_blueprints(hearing: dict[str, Any], *, name: str) -> list[dict[st
                 "nav_label": label,
                 "title": f"{label}｜{name}",
                 "clone": "bbs_tag_template",
-                "sections": sections_for_page_type("tag"),
+                "sections": sections_for_page_type("tag", hearing=hearing),
                 "source": {
                     "kind": "tag_page",
                     "n": n,
@@ -674,6 +922,25 @@ def _finish_blueprint(
     }
     if extra:
         bp.update(extra)
+    live = hearing.get("live_site_analysis") if isinstance(hearing.get("live_site_analysis"), dict) else None
+    if live:
+        bp["live_site_analysis"] = {
+            "ok": bool(live.get("ok")),
+            "site_count": live.get("site_count") or 0,
+            "nav_union": live.get("nav_union") or [],
+            "policy": live.get("policy"),
+            "sites": [
+                {
+                    "ok": s.get("ok"),
+                    "role": s.get("role"),
+                    "start_url": s.get("start_url"),
+                    "page_count": s.get("page_count"),
+                    "error": s.get("error"),
+                }
+                for s in (live.get("sites") or [])
+                if isinstance(s, dict)
+            ],
+        }
     refresh_blueprint_stats(bp)
     return bp
 
@@ -696,7 +963,7 @@ def build_type1_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
             "nav_label": "TOP",
             "title": f"{name}｜トップ",
             "clone": clone,
-            "sections": sections_for_page_type("top"),
+            "sections": sections_for_page_type("top", content_seeds=focus_keywords, hearing=hearing),
             "source": {
                 "kind": "standard_template",
                 "fields": ["concept_global", "重点ワード1..5", "ページの追加"],
@@ -706,30 +973,9 @@ def build_type1_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
     )
 
     _append_hearing_pages(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_access_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_blog_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_reviews_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_contact_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_utility_shell_page(
-        pages=pages,
-        seen_slugs=seen_slugs,
-        page_id="sitemap",
-        slug="sitemap",
-        nav_label="サイトマップ",
-        page_type="sitemap",
-        name=name,
-        clone=clone,
-    )
-    _append_utility_shell_page(
-        pages=pages,
-        seen_slugs=seen_slugs,
-        page_id="privacy",
-        slug="privacy",
-        nav_label="プライバシーポリシー",
-        page_type="privacy",
-        name=name,
-        clone=clone,
-    )
+    # page composition ① must pages + ② conditionals; ③ via ページの追加 above
+    _ensure_must_pages(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_conditional_pages(hearing, pages, seen_slugs, name=name, clone=clone)
     _append_utility_shell_page(
         pages=pages,
         seen_slugs=seen_slugs,
@@ -739,6 +985,7 @@ def build_type1_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
         page_type="column",
         name=name,
         clone=clone,
+        hearing=hearing,
     )
 
     apply_directives_to_pages(pages, dict(hearing.get("page_directives") or {}))
@@ -817,7 +1064,7 @@ def build_type3_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
             "nav_label": "TOP",
             "title": f"{name}｜トップ",
             "clone": clone,
-            "sections": sections_for_page_type("top_satellite"),
+            "sections": sections_for_page_type("top_satellite", content_seeds=focus_keywords, hearing=hearing),
             "source": {
                 "kind": "satellite_template",
                 "fields": ["concept_global", "重点ワード1..5", "参考サイト (お客様所有)"],
@@ -828,30 +1075,9 @@ def build_type3_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
     )
 
     _append_hearing_pages(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_access_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_blog_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_reviews_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_contact_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_utility_shell_page(
-        pages=pages,
-        seen_slugs=seen_slugs,
-        page_id="sitemap",
-        slug="sitemap",
-        nav_label="サイトマップ",
-        page_type="sitemap",
-        name=name,
-        clone=clone,
-    )
-    _append_utility_shell_page(
-        pages=pages,
-        seen_slugs=seen_slugs,
-        page_id="privacy",
-        slug="privacy",
-        nav_label="プライバシーポリシー",
-        page_type="privacy",
-        name=name,
-        clone=clone,
-    )
+    # page composition ① must pages + ② conditionals; ③ via ページの追加 above
+    _ensure_must_pages(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_conditional_pages(hearing, pages, seen_slugs, name=name, clone=clone)
     _append_utility_shell_page(
         pages=pages,
         seen_slugs=seen_slugs,
@@ -861,6 +1087,7 @@ def build_type3_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
         page_type="column",
         name=name,
         clone=clone,
+        hearing=hearing,
     )
 
     apply_directives_to_pages(pages, dict(hearing.get("page_directives") or {}))
@@ -940,7 +1167,7 @@ def build_type4_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
             "nav_label": "TOP",
             "title": f"{name}｜トップ",
             "clone": clone,
-            "sections": sections_for_page_type("top_satellite"),
+            "sections": sections_for_page_type("top_satellite", content_seeds=focus_keywords, hearing=hearing),
             "source": {
                 "kind": "satellite_renewal_top",
                 "fields": ["既存URL", "TOP踏襲", "重点ワード1..5", "参考サイト (お客様所有)"],
@@ -955,30 +1182,9 @@ def build_type4_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
     # Prefer ページの追加 (satellite); also honor 既存ページURL* when present.
     _append_hearing_pages(hearing, pages, seen_slugs, name=name, clone=clone)
     _append_existing_pages(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_access_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_blog_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_reviews_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_contact_page(hearing, pages, seen_slugs, name=name, clone=clone)
-    _append_utility_shell_page(
-        pages=pages,
-        seen_slugs=seen_slugs,
-        page_id="sitemap",
-        slug="sitemap",
-        nav_label="サイトマップ",
-        page_type="sitemap",
-        name=name,
-        clone=clone,
-    )
-    _append_utility_shell_page(
-        pages=pages,
-        seen_slugs=seen_slugs,
-        page_id="privacy",
-        slug="privacy",
-        nav_label="プライバシーポリシー",
-        page_type="privacy",
-        name=name,
-        clone=clone,
-    )
+    # page composition ① must + ② conditionals
+    _ensure_must_pages(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_conditional_pages(hearing, pages, seen_slugs, name=name, clone=clone)
     _append_utility_shell_page(
         pages=pages,
         seen_slugs=seen_slugs,
@@ -988,6 +1194,7 @@ def build_type4_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
         page_type="column",
         name=name,
         clone=clone,
+        hearing=hearing,
     )
 
     apply_directives_to_pages(pages, dict(hearing.get("page_directives") or {}))
@@ -1142,6 +1349,7 @@ def _append_existing_pages(
         seen_slugs.add(slug)
         ptype = _infer_existing_page_type(page_name, url)
         label = _nav_label_from_existing(page_name, slug)
+        seeds = [page_name, url] if page_name or url else []
         pages.append(
             {
                 "id": slug,
@@ -1151,14 +1359,14 @@ def _append_existing_pages(
                 "nav_label": label,
                 "title": f"{label}｜{name}",
                 "clone": clone,
-                "sections": sections_for_page_type(ptype),
+                "sections": sections_for_page_type(ptype, content_seeds=seeds, hearing=hearing),
                 "source": {
                     "kind": "existing_page",
                     "n": slot.get("n"),
                     "fields": [f"既存ページURL{slot.get('n')}"],
                     "url": url,
                 },
-                "content_seeds": [page_name, url] if page_name or url else [],
+                "content_seeds": seeds,
                 "existing_url": url,
             }
         )
@@ -1209,7 +1417,7 @@ def build_type2_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
             "nav_label": "TOP",
             "title": f"{name}｜トップ",
             "clone": clone,
-            "sections": sections_for_page_type("top"),
+            "sections": sections_for_page_type("top", content_seeds=focus_keywords, hearing=hearing),
             "source": {
                 "kind": "renewal_top",
                 "fields": ["既存URL", "TOP踏襲", "重点ワード1..5"],
@@ -1244,7 +1452,7 @@ def build_type2_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
                 "nav_label": label,
                 "title": f"{label}｜{name}",
                 "clone": clone,
-                "sections": sections_for_page_type("contact"),
+                "sections": sections_for_page_type("contact", hearing=hearing),
                 "source": {"kind": "existing_form", "fields": ["フォームURL1"], "url": slot.get("url")},
                 "content_seeds": [str(slot.get("url") or "")],
                 "existing_url": str(slot.get("url") or ""),
@@ -1296,7 +1504,7 @@ def build_type2_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
                 "nav_label": label,
                 "title": f"{label}｜{name}",
                 "clone": clone,
-                "sections": sections_for_page_type("access"),
+                "sections": sections_for_page_type("access", hearing=hearing),
                 "source": {
                     "kind": "remarks_company",
                     "fields": ["備考", "単独店舗 (住所)", "単独店舗 (電話番号)"],
@@ -1318,6 +1526,7 @@ def build_type2_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
             page_type="sitemap",
             name=name,
             clone=clone,
+            hearing=hearing,
         )
 
     privacy = hearing.get("privacy") or {}
@@ -1331,7 +1540,12 @@ def build_type2_blueprint(hearing: dict[str, Any]) -> dict[str, Any]:
             page_type="privacy",
             name=name,
             clone=clone,
+            hearing=hearing,
         )
+
+    # page composition ① must pages regardless of hearing yes/no flags; ② conditionals
+    _ensure_must_pages(hearing, pages, seen_slugs, name=name, clone=clone)
+    _append_conditional_pages(hearing, pages, seen_slugs, name=name, clone=clone)
 
     apply_directives_to_pages(pages, dict(hearing.get("page_directives") or {}))
     attach_writing_push_seeds(pages, hearing)

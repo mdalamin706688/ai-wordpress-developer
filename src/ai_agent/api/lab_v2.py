@@ -39,7 +39,13 @@ from ai_agent.v2.blueprint import (
     type3_nav_probe_count,
     uses_satellite_nav,
 )
-from ai_agent.v2.export import blueprint_to_section_rows, sections_to_csv, sections_to_xlsx_bytes
+from ai_agent.v2.export import (
+    blueprint_to_section_rows,
+    build_test_packs_payload,
+    sections_to_csv,
+    sections_to_xlsx_bytes,
+    packs_to_xlsx_bytes,
+)
 from ai_agent.v2.hearing_parser import parse_hearing_sheet
 from ai_agent.v2.page_catalog import catalog_for_api
 from ai_agent.v2.production_types import ProductionType, production_type_label
@@ -52,7 +58,13 @@ from ai_agent.v2.pipeline_roles import (
     v2_writer_model,
     validate_v2_model_roles,
 )
-from ai_agent.v2.prompt_rules import apply_satellite_lab_config, prompt_sections_catalog_v2, resolve_satellite_write_prompts
+from ai_agent.v2.prompt_rules import (
+    apply_satellite_lab_config,
+    prompt_sections_catalog_v2,
+    resolve_satellite_planner_prompt,
+    resolve_satellite_write_prompts,
+    resolve_type24_extras,
+)
 from ai_agent.v2.section_planner import (
     count_planner_pages,
     enrich_blueprint_with_ai,
@@ -96,7 +108,13 @@ class BlueprintMergeIn(BaseModel):
 class ExportIn(BaseModel):
     blueprint: dict[str, Any]
     sections: list[dict[str, str]] | None = None
-    format: str = "csv"  # csv | xlsx | both
+    format: str = "csv"  # csv | xlsx | packs | both
+    hearing: dict[str, Any] | None = None
+    hearing_file: str = ""
+    hearing_url: str = ""
+    model_ids: list[str] = Field(default_factory=list)
+    planner_system_prompt: str = ""
+    system_prompt: str = ""
 
 
 class WriteIn(BaseModel):
@@ -107,8 +125,71 @@ class WriteIn(BaseModel):
     mode: str = "production"
 
 
+def _slim_v2_config_payload(out: dict[str, Any]) -> dict[str, Any]:
+    """Drop duplicate prompt bodies from GET /config (keeps type_prompts as source of truth).
+
+    prompt_pack.sections historically mirrored full AI-1/AI-2 text already present in
+    type_prompts — that doubled the JSON (~30KB) and slowed first paint on slow links.
+    """
+    pack = out.get("prompt_pack")
+    if isinstance(pack, dict):
+        slim_sections: list[dict[str, Any]] = []
+        for sec in pack.get("sections") or []:
+            if not isinstance(sec, dict):
+                continue
+            tid = str(sec.get("id") or sec.get("type_id") or "").strip()
+            if not tid:
+                continue
+            slim_sections.append(
+                {
+                    "id": tid,
+                    "type_id": tid,
+                    "title": str(sec.get("title") or ""),
+                    "description": str(sec.get("description") or ""),
+                    "field": str(sec.get("field") or f"type_prompts.{tid}.system_prompt"),
+                }
+            )
+        out["prompt_pack"] = {
+            "mode": pack.get("mode") or "per_type",
+            "language": pack.get("language") or "en",
+            "hint": pack.get("hint") or "",
+            "sections": slim_sections,
+        }
+    # Empty observe-only catalog — UI rebuilds after AI-1
+    out["prompt_sections"] = {"source": "pending", "tabs": [], "hint": ""}
+    return out
+
+
 def _enrich_v2_lab_config(out: dict[str, Any], *, include_catalog: bool = False) -> dict[str, Any]:
-    apply_satellite_lab_config(out)
+    # Skip heavy re-merge when per-type packs are already current (common path).
+    # Nested schema uses top_catchphrase — never keep legacy flat hero_brand_name packs.
+    tp = out.get("type_prompts") if isinstance(out.get("type_prompts"), dict) else {}
+    t3_planner = str((tp.get("type3") or {}).get("planner_system_prompt") or "")
+    t3_writer = str((tp.get("type3") or {}).get("system_prompt") or "")
+    already = (
+        isinstance(tp.get("type3"), dict)
+        and "PAGE SCOPE" in t3_planner
+        and "HEARING-DYNAMIC" not in t3_planner
+        and "hardcode" not in t3_planner.lower()
+        and "NESTED PATTERN" not in t3_planner
+        and "hero_brand_name" not in t3_planner
+        and ("NESTED" in t3_planner or "CONTENT SECTIONS + NESTED" in t3_planner)
+        and "PAGE SCOPE" in t3_writer
+        and "HEARING-DYNAMIC" not in t3_writer
+        and "hardcode" not in t3_writer.lower()
+        and "Nested pattern:" not in t3_writer
+        and "lead_gen / recruit" not in t3_writer
+        and "hero_brand_name" not in t3_writer
+        and ("CATCHCOPY" in t3_writer or "catchphrase" in t3_writer)
+        and ("SITE BRIEF" in t3_writer or "サイト制作目的" in t3_writer or "lead_gen" in t3_writer or "THIS hearing" in t3_writer)
+        and ("PLAYBOOK" in t3_writer)
+    )
+    if not already:
+        apply_satellite_lab_config(out)
+    else:
+        out.setdefault("lab_mode", "satellite")
+        if not out.get("prompt_pack"):
+            apply_satellite_lab_config(out)
     out["version"] = 2
     out["ui_path"] = "/ai/v2/"
     out["api_prefix"] = "/v2/lab"
@@ -118,12 +199,12 @@ def _enrich_v2_lab_config(out: dict[str, Any], *, include_catalog: bool = False)
     out["type4_blueprint_version"] = TYPE4_BLUEPRINT_VERSION
     out["type3_nav_pages"] = type3_nav_probe_count() or (TYPE3_MIN_NAV_PAGES + 1)
     out["server_nav_probe"] = out["type3_nav_pages"]
-    out["satellite_build"] = "2026-09-11-v2-only"
+    out["satellite_build"] = "2026-09-17-result-outline-bold"
     out["active_production_types"] = ["type1", "type2", "type3", "type4"]
     out["model_roles"] = {
         "semantics": "satellite",
         "max_models": 2,
-        "note": "Model #1 = AI-1 dynamic section creator. Model #2 = AI-2 content writer.",
+        "note": "Model #1 = AI-1 Sections Planner. Model #2 = AI-2 Content Writer.",
         "1": "AI-1 Section Creator — structure + rules only (never page copy)",
         "2": "AI-2 Content Writer — Japanese text for each section (always model #2)",
     }
@@ -167,7 +248,7 @@ def _enrich_v2_lab_config(out: dict[str, Any], *, include_catalog: bool = False)
         out["ai_stages"] = ["planner", "writer"]
         out["planner_status"] = "llm_type1_type2_type3_type4"
         out["writer_status"] = "active"
-    return out
+    return _slim_v2_config_payload(out)
 
 
 @router.get("/v2/lab/config")
@@ -222,6 +303,24 @@ async def _build_lab_blueprint(
             detail="Select at least 1 model (#1 AI-1 Section Creator) in Config before running AI-1.",
         )
 
+    # Fetch live reference/main/existing URLs → structure hints (no copy).
+    try:
+        from ai_agent.v2.site_analyzer import enrich_hearing_with_live_site
+
+        if progress is not None:
+            await progress(
+                "live-site",
+                0,
+                1,
+                "live_site",
+                active=["live-site"],
+                remaining=1,
+                soft_pct=1.0,
+            )
+        await asyncio.to_thread(enrich_hearing_with_live_site, hearing)
+    except Exception:
+        pass
+
     blueprint = build_site_blueprint(hearing)
     if uses_satellite_nav(hearing):
         inject_missing_type3_nav_pages(blueprint, hearing)
@@ -233,12 +332,16 @@ async def _build_lab_blueprint(
     except HTTPException as exc:
         raise HTTPException(status_code=400, detail=str(exc.detail)) from exc
 
+    planner_system = resolve_satellite_planner_prompt(
+        cfg, production_type=str(hearing.get("production_type") or "")
+    )
     blueprint = await enrich_blueprint_with_ai(
         registry=registry,
         hearing=hearing,
         blueprint=blueprint,
         planner=planner,
         progress=progress,
+        system_prompt=planner_system,
     )
     if progress:
         await progress(
@@ -337,6 +440,9 @@ async def lab_v2_blueprint_stream(body: BlueprintIn) -> StreamingResponse:
                 )
                 bar_index = 0
                 soft_pct = 0.0
+            elif phase == "live_site":
+                label = "ライブ参考サイトの構成を解析中（コピー禁止・構造ヒントのみ）…"
+                soft_pct = 1.0 if soft_pct is None else soft_pct
             elif phase == "finalize":
                 label = f"確定処理中（AI計画 {bar_index}/{bar_total} 完了）"
                 soft_pct = 100.0 if soft_pct is None else soft_pct
@@ -505,6 +611,22 @@ async def lab_v2_write_stream(body: WriteIn) -> StreamingResponse:
         inject_missing_type3_nav_pages(blueprint, hearing)
     blueprint = finalize_lab_blueprint(blueprint, hearing)
 
+    # Ensure live structure hints exist for AI-2 even if AI-1 ran without them.
+    try:
+        from ai_agent.v2.site_analyzer import enrich_hearing_with_live_site
+
+        if not (hearing.get("live_site_analysis") or {}).get("ok"):
+            await asyncio.to_thread(enrich_hearing_with_live_site, hearing)
+        # Re-attach per-page live_structure after analysis
+        from ai_agent.v2.site_analyzer import apply_live_structure_to_page_sections
+
+        for key in ("pages", "seo_pages", "tag_pages"):
+            for page in blueprint.get(key) or []:
+                if isinstance(page, dict):
+                    apply_live_structure_to_page_sections(page, hearing)
+    except Exception:
+        pass
+
     cfg = load_lab_config()
     model_ids = body.model_ids or cfg.get("selected_models") or []
     model_ids = [m for m in model_ids if m in REGISTRY][:2]
@@ -535,7 +657,10 @@ async def lab_v2_write_stream(body: WriteIn) -> StreamingResponse:
     rows = blueprint_to_section_rows(blueprint)
     run_at = datetime.now(UTC).isoformat()
     mode = (body.mode or "production").strip().lower()
-    system_prompt, user_template = resolve_satellite_write_prompts(cfg)
+    system_prompt, user_template = resolve_satellite_write_prompts(
+        cfg, production_type=str(hearing.get("production_type") or "")
+    )
+    type24_extras = resolve_type24_extras(cfg)
 
     # Fill every site page: blank → shell templates → AI-2 LLM pages
     all_write_pages = list(blank_pages) + list(shell_pages) + list(pages)
@@ -704,6 +829,7 @@ async def lab_v2_write_stream(body: WriteIn) -> StreamingResponse:
                         user_template=user_template,
                         mode=mode,
                         on_chars=_on_chars,
+                        type24_extras=type24_extras,
                     )
                 )
                 while not write_task.done():
@@ -851,20 +977,109 @@ async def lab_v2_write_stream(body: WriteIn) -> StreamingResponse:
     )
 
 
+def _enrich_export_rows(
+    rows: list[dict[str, str]],
+    blueprint: dict[str, Any],
+) -> list[dict[str, str]]:
+    """Attach nav_label from blueprint so page keys match Test1 Japanese labels."""
+    by_slug: dict[str, str] = {}
+    for key in ("pages", "seo_pages", "tag_pages"):
+        for page in blueprint.get(key) or []:
+            if not isinstance(page, dict):
+                continue
+            slug = str(page.get("slug") or page.get("id") or "")
+            if slug:
+                by_slug[slug] = str(page.get("nav_label") or "")
+    out: list[dict[str, str]] = []
+    for row in rows:
+        r = dict(row)
+        if not str(r.get("nav_label") or "").strip():
+            slug = str(r.get("page_slug") or r.get("page_id") or "")
+            if slug in by_slug:
+                r["nav_label"] = by_slug[slug]
+        out.append(r)
+    return out
+
+
+def _export_production_type(body: ExportIn) -> str:
+    hearing = body.hearing or {}
+    bp = body.blueprint or {}
+    return str(
+        hearing.get("production_type")
+        or bp.get("production_type")
+        or bp.get("type")
+        or "type3"
+    )
+
+
+def _export_prompts_and_models(body: ExportIn) -> tuple[str, str, str, str]:
+    """Resolve AI-1/AI-2 prompts + model ids for the pack sheets."""
+    cfg = load_lab_config()
+    tid = _export_production_type(body)
+    model_ids = body.model_ids or cfg.get("selected_models") or []
+    ai1 = v2_planner_model(model_ids) or (model_ids[0] if model_ids else "")
+    ai2 = v2_writer_model(model_ids) or ai1
+    planner = str(body.planner_system_prompt or "").strip()
+    writer = str(body.system_prompt or "").strip()
+    if not planner:
+        try:
+            planner = resolve_satellite_planner_prompt(cfg, production_type=tid) or ""
+        except Exception:
+            planner = str(cfg.get("planner_system_prompt") or "")
+    if not writer:
+        try:
+            system, _user = resolve_satellite_write_prompts(cfg, production_type=tid)
+            writer = system or ""
+        except Exception:
+            writer = str(cfg.get("system_prompt") or "")
+    return planner, writer, ai1, ai2
+
+
 @router.post("/v2/lab/export")
 def lab_v2_export(body: ExportIn) -> dict[str, Any]:
     blueprint = body.blueprint or {}
     rows = body.sections if body.sections is not None else blueprint_to_section_rows(blueprint)
+    rows = _enrich_export_rows(rows, blueprint)
     fmt = (body.format or "csv").strip().lower()
-    out: dict[str, Any] = {"rows": len(rows)}
+    planner, writer, ai1, ai2 = _export_prompts_and_models(body)
+    packs = build_test_packs_payload(
+        blueprint=blueprint,
+        rows=rows,
+        planner_prompt=planner,
+        writer_prompt=writer,
+        ai1_model=ai1,
+        ai2_model=ai2,
+        hearing_file=body.hearing_file,
+        hearing_url=body.hearing_url,
+        site_name=str(blueprint.get("site_name") or ""),
+        hearing=body.hearing,
+    )
+    out: dict[str, Any] = {
+        "rows": len(rows),
+        "format": "test_packs",
+        "packs": {
+            "ai1": {
+                "title": packs["ai1"]["title"],
+                "banner": packs["ai1"]["banner"],
+                "values": packs["ai1"]["values"],
+                "result_runs": packs["ai1"].get("result_runs") or [],
+            },
+            "ai2": {
+                "title": packs["ai2"]["title"],
+                "banner": packs["ai2"]["banner"],
+                "values": packs["ai2"]["values"],
+                "result_runs": packs["ai2"].get("result_runs") or [],
+            },
+        },
+    }
     if fmt in {"csv", "both"}:
         out["csv"] = sections_to_csv(rows)
-    if fmt in {"xlsx", "both"}:
+    if fmt in {"xlsx", "packs", "both"}:
         out["xlsx_base64"] = None
         try:
             import base64
 
-            raw = sections_to_xlsx_bytes(rows, blueprint=blueprint)
+            raw = packs_to_xlsx_bytes(packs)
             out["xlsx_base64"] = base64.b64encode(raw).decode("ascii")
         except RuntimeError as exc:
             out["xlsx_error"] = str(exc)
@@ -875,13 +1090,26 @@ def lab_v2_export(body: ExportIn) -> dict[str, Any]:
 def lab_v2_export_xlsx(body: ExportIn) -> Response:
     blueprint = body.blueprint or {}
     rows = body.sections if body.sections is not None else blueprint_to_section_rows(blueprint)
+    rows = _enrich_export_rows(rows, blueprint)
+    planner, writer, ai1, ai2 = _export_prompts_and_models(body)
     try:
-        data = sections_to_xlsx_bytes(rows, blueprint=blueprint)
+        data = sections_to_xlsx_bytes(
+            rows,
+            blueprint=blueprint,
+            planner_prompt=planner,
+            writer_prompt=writer,
+            ai1_model=ai1,
+            ai2_model=ai2,
+            hearing_file=body.hearing_file,
+            hearing_url=body.hearing_url,
+            site_name=str(blueprint.get("site_name") or ""),
+            hearing=body.hearing,
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
     name = str(blueprint.get("site_name") or "site").replace("/", "-")
     return Response(
         content=data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{name}-sections.xlsx"'},
+        headers={"Content-Disposition": f'attachment; filename="{name}-test-packs.xlsx"'},
     )

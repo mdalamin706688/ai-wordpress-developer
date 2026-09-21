@@ -46,8 +46,13 @@ def test_type1_blueprint_standard_template():
     if "menu" not in slugs:
         omitted = bp.get("omitted_pages") or []
         assert any(str(r.get("slug")) == "menu" for r in omitted if isinstance(r, dict))
-    for required in ("access", "blog", "reviews", "contact", "sitemap", "privacy", "column"):
+    for required in ("access", "blog", "contact", "sitemap", "privacy", "column"):
         assert required in slugs
+    # page composition ② — reviews only when 口コミ slots filled (type1 sample has none)
+    assert "reviews" not in slugs
+    # page composition ② — AI blog when AIサポート=あり
+    assert "ai-blog" in slugs
+    assert hearing["flags"].get("include_ai_blog") is True
     shinki = bp["shinki"]
     assert shinki["domain"] == "sand-palce.com"
     assert bp["stats"]["seo_pages"] == 15

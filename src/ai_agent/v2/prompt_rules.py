@@ -4,8 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from ai_agent.pipeline.copy_generator import SYSTEM_PROMPT
 from ai_agent.pipeline.prompt_rules import SHARED_PAGE_RULES
+from ai_agent.v2.prompt_packs import (
+    DEFAULT_AI1_PLANNER_SYSTEM,
+    DEFAULT_AI2_USER_TEMPLATE,
+    DEFAULT_TYPE24_EXTRAS,
+    build_prompt_pack,
+    default_prompt_values,
+    default_system_prompt_for_type,
+    looks_japanese_prompt,
+    merge_type_prompts,
+    normalize_production_type,
+)
 from ai_agent.v2.section_rules import (
     dynamic_section_rule,
     empty_prompt_sections_catalog,
@@ -44,25 +54,60 @@ def section_ids_for_page(page: dict[str, Any]) -> list[str]:
 
 
 def json_example_for_page(page: dict[str, Any]) -> str:
-    ids = section_ids_for_page(page)
-    inner = ", ".join(f'"{sid}": ""' for sid in ids)
-    return '{"sections": {' + inner + "}}"
+    """Example AI-2 JSON — nested objects for content-block sections."""
+    from ai_agent.v2.page_catalog import nested_fields_for_section
+
+    parts: list[str] = []
+    for sec in page.get("sections") or []:
+        if not isinstance(sec, dict):
+            continue
+        sid = str(sec.get("id") or "").strip()
+        if not sid:
+            continue
+        fields = nested_fields_for_section(sec)
+        if fields:
+            inner = ", ".join(f'"{f}": ""' for f in fields)
+            parts.append(f'"{sid}": {{{inner}}}')
+        else:
+            parts.append(f'"{sid}": ""')
+    return '{"sections": {' + ", ".join(parts) + "}}"
 
 
-def format_v2_page_rules(page: dict[str, Any], hearing: dict[str, Any] | None = None) -> str:
+def format_v2_page_rules(
+    page: dict[str, Any],
+    hearing: dict[str, Any] | None = None,
+    *,
+    type24_extras: str | None = None,
+) -> str:
     """Prompt block for one page — rules come from blueprint sections (dynamic)."""
+    from ai_agent.v2.page_catalog import nested_fields_for_section
+
     label = str(page.get("nav_label") or page.get("slug") or "page")
     lines = [
         f"ページ: {label} ({page.get('type') or ''})",
-        "出力JSONキー: sections (object) — 各キーは section id、値は日本語本文文字列。",
-        "Markdown禁止。事実のみ。無い情報は空文字。",
+        "出力JSONキー: sections (object) — 各キーは section id。",
+        "値は日本語文字列、または nested object（fields がある section: "
+        "例 top_catchphrase/concept_catchphrase={catchphrase…}, "
+        "point_N={title,description}, service_N={title,description}）。",
+        "セクション名は STRUCTURE 用語を使う（top_catchphrase / lead / point_N）。"
+        " layout語の hero は使わない。Markdown禁止。無い情報は空文字/空object。",
     ]
+    if hearing and str(hearing.get("production_type") or "") in {"type3", "type4", "type1"}:
+        try:
+            from ai_agent.v2.site_category import site_brief_lines
+
+            lines.extend(site_brief_lines(hearing))
+        except Exception:
+            pass
     if page.get("leave_blank"):
         lines.append(
             "重要: このページはヒアリング指示により全section id を空文字にする。"
             " 文案・料金表・Q&A を書かない。"
         )
     if hearing and str(hearing.get("production_type") or "") in {"type2", "type4"}:
+        extras = (type24_extras or "").strip() or DEFAULT_TYPE24_EXTRAS.strip()
+        if extras:
+            lines.append(extras)
         project = hearing.get("project") or {}
         copy_pol = str(project.get("existing_site_copy") or "").strip()
         if "参考にしない" in copy_pol:
@@ -77,15 +122,55 @@ def format_v2_page_rules(page: dict[str, Any], hearing: dict[str, Any] | None = 
     if ref:
         lines.append(f"参考URL（事実参照。URL自体を本文に書かない）: {ref}")
         if str(page.get("slug") or "") == "faq" or "質問" in str(page.get("type") or ""):
-            lines.append("FAQ: 参考URLの内容をヒアリング範囲でリライトし、items を空にしない。")
+            if page.get("faq_items_blank"):
+                lines.append(
+                    "FAQ: ヒアリングにQ&A本文なし — faq_items / faq_list / items 等の本文ブロックは空文字。"
+                    "参考URLの内容を推測・創作して埋めない。hero/ctaでFAQが揃っているように書かない。"
+                )
+            else:
+                lines.append("FAQ: 参考URLの内容をヒアリング範囲でリライトし、FAQ本文を空にしない。")
     overview = str(page.get("seo_overview") or "").strip()
     if overview:
         lines.append(f"SEOページ概要: {overview}")
+    if str(page.get("type") or "") == "seo":
+        primary = str(page.get("seo_primary_keyword") or "").strip()
+        lines.append(
+            "UNIQUE LANDING COPY: このSEOページ専用の書き出し。"
+            "TOP/他SEOと同じ社名・由来オープニングの使い回し禁止。"
+            "禁止: 「太陽さん」「名前になりました」「天気と付き合う仕事」などコンセプト定型の再利用。"
+            "概要・主角度に合わせて差別化する。"
+        )
+        if primary:
+            lines.append(f"主角度（冒頭1文目に含める）: {primary}")
+        siblings = [str(s).strip() for s in (page.get("seo_sibling_primaries") or []) if str(s).strip()]
+        if siblings:
+            lines.append("他SEO主角度と書き出しを揃えない: " + "、".join(siblings[:8]))
+    if page.get("force_blank_copy"):
+        lines.append(
+            "重要: "
+            + str(page.get("force_blank_reason") or "事実不足のため全section空文字。創作禁止。")
+        )
+    if page.get("faq_items_blank"):
+        lines.append(
+            "重要: "
+            + str(page.get("faq_blank_reason") or "faq_items は空文字。FAQの創作禁止。")
+        )
+    if hearing:
+        try:
+            from ai_agent.v2.site_analyzer import structure_hint_lines
+
+            for hint in structure_hint_lines(hearing, page):
+                lines.append(hint)
+        except Exception:
+            pass
     tag_kw = ""
     source = page.get("source") if isinstance(page.get("source"), dict) else {}
     n = source.get("n")
     if str(page.get("type") or "") == "tag":
         lines.append("ページ種別: タグキーワード用ランディング（短文SEO）。")
+        lines.append(
+            "UNIQUE LANDING COPY: 主キーワードから書き始める。社名由来の定型オープニング禁止。"
+        )
         tags = (hearing or {}).get("tag_keywords") or []
         tag_kw = str(page.get("tag_keyword") or "").strip()
         if not tag_kw and isinstance(n, int) and 0 < n <= len(tags):
@@ -130,8 +215,10 @@ def format_v2_page_rules(page: dict[str, Any], hearing: dict[str, Any] | None = 
         rule = str(sec.get("rule") or "").strip()
         if not rule:
             rule = dynamic_section_rule(sec, page, hearing)
+        fields = nested_fields_for_section(sec)
+        shape = f" nested={{{','.join(fields)}}}" if fields else ""
         lines.append(
-            f"{i}. [{sec.get('id')}] {sec.get('label')} ({sec.get('mode')}): {rule}"
+            f"{i}. [{sec.get('id')}] {sec.get('label')} ({sec.get('mode')}{shape}): {rule}"
         )
     ids = section_ids_for_page(page)
     if ids:
@@ -141,16 +228,15 @@ def format_v2_page_rules(page: dict[str, Any], hearing: dict[str, Any] | None = 
 
 
 def default_satellite_system_prompt() -> str:
-    """Satellite lab system prompt — fact constraints + sections JSON output."""
-    return (
-        SYSTEM_PROMPT
-        + """
-- 出力JSONキー: sections (object) — 各キーは section id、値は日本語本文文字列。
-- section id はページルールで指定されたキーのみ。Markdown禁止。
-- 応答は JSON オブジェクト1つのみ。前置き・説明・コードフェンス禁止。
-- 必ず {"sections": {"section_id": "日本語"}} 形式で返す。
-"""
-    )
+    return default_system_prompt_for_type("type3")
+
+
+def default_planner_system_prompt() -> str:
+    return DEFAULT_AI1_PLANNER_SYSTEM.strip()
+
+
+def default_type24_extras_prompt() -> str:
+    return DEFAULT_TYPE24_EXTRAS.strip()
 
 
 def is_standard_site_system_prompt(text: str) -> bool:
@@ -160,19 +246,23 @@ def is_standard_site_system_prompt(text: str) -> bool:
     return "body_paragraphs" in t or "必ず6段落" in t or "heading, lead" in t
 
 
-def default_satellite_user_template() -> str:
-    """Satellite lab AI-2 template — section JSON, not standard-site copy shape."""
+def is_legacy_jp_satellite_system_prompt(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    if "TYPE FOCUS" in t or "You are a Japanese website copywriter for BBS" in t:
+        return False
     return (
-        "次の許可された事実とページルールに従い、各 section id ごとの日本語文案を書いてください。\n"
-        "出力JSONキー: sections (object) — 各キーは section id、値は日本語本文文字列。\n"
-        "Markdown禁止。ヒアリングに無い情報は空文字。未記載の話題は書かない。\n"
-        "{page_rules}\n\n"
-        "{hearing}"
+        "あなたは日本の中小事業者向け" in t
+        or ("出力JSONキー: sections" in t and "一字一句の意味を変えずに使う" in t)
     )
 
 
+def default_satellite_user_template() -> str:
+    return DEFAULT_AI2_USER_TEMPLATE.strip()
+
+
 def is_standard_site_user_template(text: str) -> bool:
-    """Detect shared standard-site lab template (TOP + body_paragraphs)."""
     t = (text or "").strip()
     if not t:
         return True
@@ -186,24 +276,83 @@ def is_standard_site_user_template(text: str) -> bool:
     return any(m in t for m in markers)
 
 
+def is_legacy_jp_satellite_user_template(text: str) -> bool:
+    t = (text or "").strip()
+    if "Following the permitted facts" in t:
+        return False
+    return "各 section id ごとの日本語文案" in t and "{page_rules}" in t
+
+
 def apply_satellite_lab_config(out: dict[str, Any]) -> dict[str, Any]:
-    """Satellite lab config overrides — no static section catalog or v1 copy template."""
+    """Satellite lab config — separate English system prompt per Type 1–4."""
     out["prompt_sections"] = empty_prompt_sections_catalog()
-    if is_standard_site_system_prompt(str(out.get("system_prompt") or "")):
-        out["system_prompt"] = default_satellite_system_prompt()
-    if is_standard_site_user_template(str(out.get("user_prompt_template") or "")):
-        out["user_prompt_template"] = default_satellite_user_template()
+    defaults = default_prompt_values()
+    sys = str(out.get("system_prompt") or "")
+    user = str(out.get("user_prompt_template") or "")
+    if (
+        is_standard_site_system_prompt(sys)
+        or is_legacy_jp_satellite_system_prompt(sys)
+        or looks_japanese_prompt(sys)
+    ):
+        out["system_prompt"] = defaults["system_prompt"]
+    if (
+        is_standard_site_user_template(user)
+        or is_legacy_jp_satellite_user_template(user)
+        or looks_japanese_prompt(user)
+    ):
+        out["user_prompt_template"] = defaults["user_prompt_template"]
+    out["type_prompts"] = merge_type_prompts(out)
+    # Keep flat fields in sync with type3 for older UI/clients.
+    out["system_prompt"] = out["type_prompts"]["type3"]["system_prompt"]
+    out["planner_system_prompt"] = out["type_prompts"]["type3"]["planner_system_prompt"]
+    out["type24_extras_prompt"] = defaults.get("type24_extras_prompt") or DEFAULT_TYPE24_EXTRAS
+    out["prompt_pack"] = build_prompt_pack(out)
     out["lab_mode"] = "satellite"
     return out
 
 
-def resolve_satellite_write_prompts(cfg: dict[str, Any]) -> tuple[str, str]:
-    """Prompts used at AI-2 runtime (always satellite shape, not raw shared lab file)."""
+def resolve_satellite_write_prompts(
+    cfg: dict[str, Any],
+    *,
+    production_type: str | None = None,
+) -> tuple[str, str]:
+    """AI-2 prompts for the hearing's production type (not shared across types)."""
     merged = dict(cfg or {})
     apply_satellite_lab_config(merged)
-    system = str(merged.get("system_prompt") or "").strip() or default_satellite_system_prompt()
-    user = str(merged.get("user_prompt_template") or "").strip() or default_satellite_user_template()
+    tid = normalize_production_type(production_type)
+    slot = (merged.get("type_prompts") or {}).get(tid) or {}
+    system = str(slot.get("system_prompt") or "").strip() or default_system_prompt_for_type(tid)
+    user = str(slot.get("user_prompt_template") or "").strip()
+    if not user or looks_japanese_prompt(user) or "{page_rules}" not in user:
+        # Fall back to type-specific default — never a shared cross-type template.
+        from ai_agent.v2.prompt_packs import default_ai2_user_for_type
+
+        user = default_ai2_user_for_type(tid)
     return system, user
+
+
+def resolve_satellite_planner_prompt(
+    cfg: dict[str, Any],
+    *,
+    production_type: str | None = None,
+) -> str:
+    """AI-1 system prompt for the hearing's production type (not shared across types)."""
+    merged = dict(cfg or {})
+    apply_satellite_lab_config(merged)
+    tid = normalize_production_type(production_type)
+    slot = (merged.get("type_prompts") or {}).get(tid) or {}
+    planner = str(slot.get("planner_system_prompt") or "").strip()
+    if not planner:
+        from ai_agent.v2.prompt_packs import default_ai1_planner_for_type
+
+        planner = default_ai1_planner_for_type(tid)
+    return planner
+
+
+def resolve_type24_extras(cfg: dict[str, Any]) -> str:
+    merged = dict(cfg or {})
+    apply_satellite_lab_config(merged)
+    return str(merged.get("type24_extras_prompt") or "").strip() or default_type24_extras_prompt()
 
 
 def prompt_sections_catalog_v2(blueprint: dict[str, Any] | None = None) -> dict[str, Any]:

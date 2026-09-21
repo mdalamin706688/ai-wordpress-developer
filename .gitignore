@@ -37,3 +37,9 @@ known_hosts
 *(*).html
 /2026*.csv
 /infobix*.csv
+
+# Audio hearing R&D / uploads
+*.mp3
+*.wav
+*.m4a
+data/audio_rnd/

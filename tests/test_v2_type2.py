@@ -55,7 +55,12 @@ def test_type2_blueprint_from_existing_pages():
         assert "menu" in slugs
     assert "estimates" in slugs
     assert "contact" in slugs  # フォームURL1 お問合わせ is 必要 (separate from estimates)
-    assert "access" not in slugs  # アクセスページはありますか=いいえ
+    # page composition ① — access/blog always present even when hearing flags say いいえ
+    assert "access" in slugs
+    assert "blog" in slugs
+    # page composition ② — no 口コミ in sample; AIサポート=あり → ai-blog
+    assert "reviews" not in slugs
+    assert "ai-blog" in slugs
     assert "company" in slugs  # 備考: アクセス→会社概要 (directory=company)
     company = next(p for p in bp["pages"] if p["slug"] == "company")
     assert company["nav_label"] == "会社概要"

@@ -56,6 +56,7 @@
     modelFilter: "all",
     promptPage: "home",
     promptSections: null,
+    promptPackTab: "type1",
     showAdvanced: false,
     running: false,
     writePartial: false,
@@ -177,7 +178,8 @@
       state.promptPage = data.promptPage || "home";
       state.promptSections = data.promptSections || null;
       state.sheetsUrl = data.sheetsUrl || "";
-      state.showAdvanced = !!data.showAdvanced;
+      // Prompts panel always starts closed on refresh / reopen
+      state.showAdvanced = false;
       if (Array.isArray(data.selected) && data.selected.length) {
         state.selected = data.selected.slice(0, 2);
         state.committedSelected = state.selected.slice();
@@ -188,6 +190,16 @@
       syncPaidKeyModelsFromSelection();
       state.step = data.step || "config";
       state.max = typeof data.max === "number" ? data.max : 0;
+      // Drop legacy flat TOP (hero_brand_name / business_info_*) — nested catalog only.
+      if (blueprintHasLegacyFlatTop(state.blueprint) || sectionsHaveLegacyFlatTop(state.sections)) {
+        state.blueprint = null;
+        state.sections = [];
+        state.promptSections = null;
+        if (state.step === "planner" || state.step === "write" || state.step === "review" || state.step === "download") {
+          state.step = "hearing";
+          state.max = Math.min(state.max || 0, 1);
+        }
+      }
       // Never resume mid-stream flags after refresh
       state.planning = false;
       state.running = false;
@@ -196,6 +208,36 @@
     } catch (e) {
       return false;
     }
+  }
+
+  function blueprintHasLegacyFlatTop(bp) {
+    if (!bp || !bp.pages) return false;
+    for (var i = 0; i < bp.pages.length; i++) {
+      var p = bp.pages[i];
+      if (!p || (p.slug !== "home" && p.type !== "top_satellite" && p.type !== "top")) continue;
+      var secs = p.sections || [];
+      for (var j = 0; j < secs.length; j++) {
+        var id = String((secs[j] && secs[j].id) || "");
+        if (id === "hero_brand_name" || id.indexOf("hero_") === 0 || id.indexOf("business_info_") === 0) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function sectionsHaveLegacyFlatTop(rows) {
+    if (!rows || !rows.length) return false;
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i] || {};
+      var slug = String(r.page_slug || r.slug || "");
+      var id = String(r.section_id || r.id || "");
+      if (slug && slug !== "home") continue;
+      if (id === "hero_brand_name" || id.indexOf("hero_") === 0 || id.indexOf("business_info_") === 0) {
+        return true;
+      }
+    }
+    return false;
   }
 
   function clearLabSession(opts) {
@@ -211,6 +253,7 @@
     state.promptSections = null;
     state.sheetsUrl = "";
     state.sheetTabRef = null;
+    state.showAdvanced = false;
     state.planning = false;
     state.running = false;
     state.writePartial = false;
@@ -288,6 +331,79 @@
     return next;
   }
 
+  function normalizeTypePromptsInConfig(cfg) {
+    if (!cfg || typeof cfg !== "object") return cfg;
+    if (!cfg.type_prompts || typeof cfg.type_prompts !== "object") cfg.type_prompts = {};
+    if (!cfg.prompt_pack || typeof cfg.prompt_pack !== "object") {
+      cfg.prompt_pack = { mode: "per_type", language: "en", sections: [] };
+    }
+    var titles = {
+      type1: "Type 1 — New site",
+      type2: "Type 2 — Renewal",
+      type3: "Type 3 — Satellite",
+      type4: "Type 4 — Satellite renewal"
+    };
+    var descriptions = {
+      type1: "AI-1 structure + AI-2 content for Type 1 (new site).",
+      type2: "AI-1 structure + AI-2 content for Type 2 (renewal).",
+      type3: "AI-1 structure + AI-2 content for Type 3 (satellite).",
+      type4: "AI-1 structure + AI-2 content for Type 4 (satellite renewal)."
+    };
+    var sections = cfg.prompt_pack.sections || [];
+    var byId = {};
+    sections.forEach(function (s) {
+      if (s && (s.id || s.type_id)) byId[s.id || s.type_id] = s;
+    });
+    ["type1", "type2", "type3", "type4"].forEach(function (tid) {
+      var slot = cfg.type_prompts[tid] || {};
+      var fromPack = byId[tid] || {};
+      var planner = resolvePlannerValue(
+        tid,
+        fromPack.planner_value || slot.planner_system_prompt || ""
+      );
+      var system = resolvePromptValue(
+        tid,
+        fromPack.value || slot.system_prompt || ""
+      );
+      var user = resolveUserTemplate(
+        tid,
+        fromPack.user_value || slot.user_prompt_template || ""
+      );
+      if (!byId[tid]) {
+        sections.push({
+          id: tid,
+          type_id: tid,
+          title: titles[tid],
+          description: descriptions[tid]
+        });
+        byId[tid] = sections[sections.length - 1];
+      } else {
+        byId[tid].title = titles[tid];
+        byId[tid].description = descriptions[tid];
+        // Keep prompt bodies only in type_prompts (avoid duplicating ~30KB in prompt_pack)
+        delete byId[tid].planner_value;
+        delete byId[tid].value;
+        delete byId[tid].user_value;
+      }
+      cfg.type_prompts[tid] = {
+        planner_system_prompt: planner,
+        system_prompt: system,
+        user_prompt_template: user
+      };
+    });
+    cfg.prompt_pack.sections = ["type1", "type2", "type3", "type4"].map(function (tid) {
+      return {
+        id: tid,
+        type_id: tid,
+        title: titles[tid],
+        description: descriptions[tid]
+      };
+    });
+    cfg.system_prompt = (cfg.type_prompts.type3 && cfg.type_prompts.type3.system_prompt) || cfg.system_prompt || "";
+    cfg.planner_system_prompt = (cfg.type_prompts.type3 && cfg.type_prompts.type3.planner_system_prompt) || cfg.planner_system_prompt || "";
+    return cfg;
+  }
+
   async function loadConfig() {
     var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 15000) : null;
@@ -298,6 +414,8 @@
       if (state.config && state.config.prompt_sections) {
         delete state.config.prompt_sections;
       }
+      // Always normalize Type 1–4 prompts in memory so UI never shows TYPE FOCUS / AI-1 stubs.
+      normalizeTypePromptsInConfig(state.config);
       state.selected = (state.config.selected_models || []).slice(0, V2_MAX_MODELS);
       var san = sanitizeSelectedForKeys(state.selected);
       if (san.swaps.length) {
@@ -916,9 +1034,9 @@
     }
     if (!active && groupTabs.length) active = groupTabs[0];
     var groups = [
-      { id: "nav", label: "ナビ", n: counts.nav },
+      { id: "nav", label: "Nav", n: counts.nav },
       { id: "seo", label: "SEO", n: counts.seo },
-      { id: "tag", label: "タグ", n: counts.tag }
+      { id: "tag", label: "Tag", n: counts.tag }
     ].filter(function (g) { return g.n > 0; });
     var listHtml = groupTabs.length
       ? groupTabs.map(function (t) {
@@ -933,7 +1051,7 @@
             (n ? '<span class="pl-meta">' + n + "</span>" : "") +
             "</button>";
         }).join("")
-      : '<p class="pl-empty">このグループにページがありません</p>';
+      : '<p class="pl-empty">No pages in this group</p>';
     return '<div class="page-browser" id="' + esc(opts.rootId || "pageBrowser") + '">' +
       '<aside class="page-rail">' +
       '<div class="page-groups">' +
@@ -998,7 +1116,7 @@
     var tabs = catalog.tabs || [];
     if (!tabs.length) {
       return '<p class="prompt-note">' + esc(catalog.hint ||
-        "Section blocks are built dynamically after AI-1 Sections Planner runs on the hearing file.") +
+        "Section blocks are built after AI-1 Sections Planner runs on the hearing file.") +
         "</p>";
     }
     var tab = null;
@@ -1022,12 +1140,399 @@
         "</tr>";
     }).join("");
     return '<p class="prompt-note" style="margin-top:0">' +
-      esc(tab.description || "このページのセクション構成") +
-      " · " + items.length + "ブロック</p>" +
+      esc(tab.description || "Section structure for this page") +
+      " · " + items.length + " blocks</p>" +
       '<div style="overflow:auto">' +
       '<table class="prompt-table">' +
-      "<thead><tr><th>#</th><th>ブロック</th><th>mode</th><th>サイト上の役割</th></tr></thead>" +
+      "<thead><tr><th>#</th><th>Block</th><th>mode</th><th>On-site role</th></tr></thead>" +
       "<tbody>" + rows + "</tbody></table></div>";
+  }
+
+  /** Fallback English prompts — must stay aligned with src/ai_agent/v2/prompt_packs.py.
+   * Prefer API type_prompts values; these are only used when the API pack is missing/stale. */
+  function defaultPlannerForType(tid) {
+    if (tid === "type1") {
+      return (
+        "TYPE 1 — hearing-driven structure.\n" +
+        "Plan section blocks only from THIS hearing sheet. Do not invent facts.\n" +
+        "Output JSON sections with id, label, mode, rule only. No page copy.\n\n" +
+        "You are AI-1 (Sections Planner) for Type 1 — NEW site (新規).\n" +
+        "Your job: design the SECTION MAP for one WordPress page so AI-2 can write Japanese copy later.\n" +
+        "You do NOT write website content, headings, paragraphs, or customer-facing text.\n\n" +
+        "HEARING SHEET IS THE SOURCE OF TRUTH:\n" +
+        "- Use only pages, seeds, directives, flags, and facts from THIS Type 1 hearing.\n" +
+        "- Do not invent services, prices, staff, reviews, jobs, pages, or claims.\n" +
+        "- Do not use renewal / existing-URL ideas — Type 1 is a new site.\n\n" +
+        "PAGE LIST CONTEXT (already decided before you run — do not invent pages):\n" +
+        "1) MUST pages always exist: TOP, Access, Blog, Form/Contact, Sitemap, Privacy Policy.\n" +
+        "2) CONDITIONAL: Reviews (口コミ slots), Recruit (制作種別=リクルート), AI blog (AIサポート=あり).\n" +
+        "3) Other content pages from ページの追加 / SEO / tag.\n" +
+        "- Plan SECTIONS for the given page only.\n\n" +
+        "OUTPUT (JSON only): {\"sections\":[{\"id\":\"snake_case\",\"label\":\"short English label\",\"mode\":\"generate|facts|expand|shell|blank\",\"rule\":\"short English instruction for AI-2 from hearing facts\"}]}\n" +
+        "- Keys allowed: id, label, mode, rule ONLY. No page copy."
+      );
+    }
+    if (tid === "type3") {
+      return (
+        "TYPE 3 — SATELLITE (hearing-driven CONTENT SECTIONS + NESTED ITEMS).\n" +
+        "Plan section blocks only from THIS Type 3 hearing sheet. Do not invent facts.\n" +
+        "Output JSON sections with id, label, mode, rule only. No page copy.\n\n" +
+        "You are AI-1 (Sections Planner) for Type 3 — Satellite (サテライト).\n" +
+        "PAGE SCOPE: plan the template_hint_ids / nested fields on THIS PAGE block.\n" +
+        "Use site_purpose / site_category / production_kind from THIS hearing for tone rules.\n" +
+        "Follow ページの追加 for THIS hearing via the PAGE block.\n" +
+        "Never use layout word \"hero\" as a section id. Template placement is AI-3.\n" +
+        "You do NOT write website content.\n\n" +
+        "HEARING SHEET IS THE SOURCE OF TRUTH. Do not invent services, prices, staff, reviews, jobs, pages, or claims.\n" +
+        "If live_site_structure is provided: STRUCTURE and topic headings only. Never copy live body text.\n\n" +
+        "OUTPUT (JSON only): {\"sections\":[{\"id\":\"snake_case\",\"label\":\"short English label\",\"mode\":\"generate|facts|expand|shell|blank\",\"rule\":\"short English instruction for AI-2 from hearing facts\"}]}\n" +
+        "- Keys allowed: id, label, mode, rule ONLY. id 2–32 chars. No page copy."
+      );
+    }
+    var n = String(tid || "type3").replace("type", "");
+    return (
+      "TYPE " + n + " — hearing-driven structure.\n" +
+      "Plan section blocks only from THIS hearing sheet. Do not invent facts.\n" +
+      "Output JSON sections with id, label, mode, rule only. No page copy.\n\n" +
+      "You are BBS WordPress section planner (AI-1).\n" +
+      "Plan section BLOCK STRUCTURE for AI-2. Do NOT write website content.\n" +
+      "HEARING SHEET IS THE SOURCE OF TRUTH. Do not invent facts.\n" +
+      "PAGE COMPOSITION RULES: must pages always; reviews/recruit/AI-blog only when hearing flags say so.\n" +
+      "Output JSON: {\"sections\":[{\"id\":\"...\",\"label\":\"...\",\"mode\":\"...\",\"rule\":\"English instruction for AI-2\"}]} — id/label/mode/rule only."
+    );
+  }
+
+  function defaultWriterForType(tid) {
+    var heads = {
+      type1: (
+        "TYPE 1 — NEW SITE (hearing-driven content):\n" +
+        "- This hearing is a NEW site (not a renewal of an existing URL).\n" +
+        "- Build Japanese section copy only from this Type 1 hearing sheet.\n" +
+        "- Follow page-add / blank / writing_guidance directives from the hearing.\n" +
+        "- Do not use existing-site URL or renewal copy policies — they do not apply.\n" +
+        "- Follow CONTENT SCOPE: reviews/recruit/AI-blog copy only when those hearing flags/items exist.\n"
+      ),
+      type2: (
+        "TYPE 2 — RENEWAL (hearing-driven content):\n" +
+        "- This hearing renews an existing client site.\n" +
+        "- Hearing sheet facts are still the only allowed content source.\n" +
+        "- Existing URL / existing page fields are structure reference only.\n" +
+        "- Follow CONTENT SCOPE: reviews/recruit/AI-blog copy only when those hearing flags/items exist.\n"
+      ),
+      type3: (
+        "TYPE 3 — SATELLITE (hearing-driven NESTED CONTENT BLOCKS):\n" +
+        "- Build THIS satellite from THIS hearing (サイト制作目的 + 制作種別 decide category).\n" +
+        "- PAGE SCOPE: fill only the section ids in {page_rules} for THIS page.\n" +
+        "- Follow SITE BRIEF + PLAYBOOK in page_rules for THIS hearing's category and tone.\n" +
+        "- For each id, fill nested fields exactly as page_rules lists them (description not body when required).\n" +
+        "- Never name a section \"hero\" (layout word).\n" +
+        "- Never invent rankings/awards (地域1番 / No.1) unless hearing states them.\n" +
+        "- CATCHCOPY: ONE emotional phrase 15–28 Japanese chars; longer story only in short_description.\n" +
+        "- AREA: use composed area from SITE BRIEF (半島・県 when both appear) — not prefecture-only.\n" +
+        "- ALL SECTIONS: meaningful title+body from 売り / page-add / focus seeds — no thin filler.\n" +
+        "- CTA label: clear inquiry action for lead_gen (無料相談・お見積り).\n" +
+        "- LIVE SITE: structure/topic hints only; NEVER paste live body. Hearing facts win.\n" +
+        "- UNIQUE LANDING COPY: each SEO page opens on its keyword; never reuse TOP brand-origin story (太陽さん / 名前になりました).\n" +
+        "- Reviews/greeting/FAQ bodies empty when hearing lacks real 口コミ本文 / staff facts / FAQ Q&A.\n" +
+        "- Follow CONTENT SCOPE: conditional pages only when hearing flags/items exist.\n"
+      ),
+      type4: (
+        "TYPE 4 — SATELLITE RENEWAL (hearing-driven content):\n" +
+        "- This hearing is satellite structure + renewal policy.\n" +
+        "- Hearing sheet facts are the only allowed content source.\n" +
+        "- Existing URL = structure only. Follow CONTENT SCOPE for reviews/recruit/AI-blog.\n" +
+        "- UNIQUE LANDING COPY: each SEO page should follow its primary angle; never reuse brand-origin TOP story (太陽さん / 名前になりました).\n"
+      )
+    };
+    var shared = (
+      "\nYou are a website copywriter for BBS WordPress sites (AI-2).\n" +
+      "Write customer-facing section text in Japanese. All instructions below are in English.\n\n" +
+      "HEARING SHEET IS THE SOURCE OF TRUTH:\n" +
+      "- Every fact must come from THIS hearing sheet (and page rules derived from it).\n" +
+      "- If the hearing omits a topic, leave that section empty (\"\"). Never invent.\n\n" +
+      "CONTENT SCOPE (pages already chosen by blueprint — do not invent pages):\n" +
+      "- Write ONLY the section ids listed in the page rules for THIS page.\n" +
+      "- Reviews/recruit/AI-blog copy only when hearing flags/items exist.\n" +
+      "- leave_blank pages: every section value must be \"\".\n\n" +
+      "Constraints:\n" +
+      "- Use shop name, address, station, walk minutes, phone, hours, holidays, prices, menu names, payment, reservation, and parking exactly as given in meaning.\n" +
+      "- Do not invent guarantees, medical effects, qualifications, awards, or unstated policies.\n" +
+      "- Use polite Japanese (desu/masu). No Markdown. Draft only.\n" +
+      "- Values may be Japanese strings OR nested objects when the page rule shows nested fields.\n" +
+      "- Always return {\"sections\": { … }}."
+    );
+    return (heads[tid] || heads.type3) + shared;
+  }
+
+  var DEFAULT_USER_PROMPT_TEMPLATE = (
+    "Following the permitted facts and page rules, write Japanese copy for each section id.\n" +
+    "Output JSON key: sections (object) — each key is a section id, value is a Japanese body string.\n" +
+    "No Markdown. If the hearing has no fact for a section, use an empty string. Do not invent topics.\n" +
+    "{page_rules}\n\n" +
+    "{hearing}"
+  );
+
+  function promptLooksJapanese(text) {
+    var t = String(text || "");
+    return t.indexOf("あなたは") >= 0 ||
+      t.indexOf("次の許可された事実") >= 0 ||
+      t.indexOf("出力JSONキー") >= 0 ||
+      t.indexOf("Markdown禁止") >= 0 ||
+      t.indexOf("です・ます") >= 0 ||
+      t.indexOf("一字一句") >= 0;
+  }
+
+  function packValueFor(tid, field) {
+    var cfg = state.config || {};
+    var sections = (cfg.prompt_pack && cfg.prompt_pack.sections) || [];
+    for (var i = 0; i < sections.length; i++) {
+      if (sections[i].id === tid || sections[i].type_id === tid) {
+        return String(sections[i][field] || "").trim();
+      }
+    }
+    var slot = (cfg.type_prompts && cfg.type_prompts[tid]) || {};
+    if (field === "planner_value") return String(slot.planner_system_prompt || "").trim();
+    if (field === "value") return String(slot.system_prompt || "").trim();
+    if (field === "user_value") return String(slot.user_prompt_template || "").trim();
+    return "";
+  }
+
+  function isGoodWriterPrompt(v) {
+    var t = String(v || "");
+    if (!(t.indexOf("hearing-driven") >= 0 &&
+      t.indexOf("CONTENT SCOPE") >= 0 &&
+      t.indexOf("TYPE FOCUS") < 0 &&
+      !promptLooksJapanese(t))) {
+      return false;
+    }
+    // Type 3 must be nested from page_rules, not flat hero_* stubs.
+    if (t.indexOf("TYPE 3 — SATELLITE") >= 0) {
+      return t.indexOf("PAGE SCOPE") >= 0 &&
+        t.indexOf("HEARING-DYNAMIC") < 0 &&
+        (t.indexOf("NESTED") >= 0 || t.indexOf("nested") >= 0) &&
+        (t.indexOf("page_rules") >= 0 || t.indexOf("THIS page") >= 0) &&
+        (t.indexOf("CATCHCOPY") >= 0 || t.indexOf("catchphrase") >= 0) &&
+        (t.indexOf("SITE BRIEF") >= 0 || t.indexOf("サイト制作目的") >= 0 || t.indexOf("lead_gen") >= 0) &&
+        t.indexOf("PLAYBOOK") >= 0 &&
+        t.indexOf("hero_brand_name") < 0 &&
+        t.indexOf("branch landing site") < 0;
+    }
+    return true;
+  }
+
+  function isGoodPlannerPrompt(tid, v) {
+    var t = String(v || "");
+    if (!t || promptLooksJapanese(t)) return false;
+    if (tid === "type1") {
+      return t.indexOf("TYPE 1 — hearing-driven structure") >= 0 &&
+        t.indexOf("No page copy") >= 0 &&
+        (t.indexOf("PAGE LIST CONTEXT") >= 0 || t.length > 500);
+    }
+    if (tid === "type3") {
+      // Accept nested planner from THIS hearing — reject legacy flat hero_brand_name stubs.
+      return t.indexOf("PAGE SCOPE") >= 0 &&
+        t.indexOf("HEARING-DYNAMIC") < 0 &&
+        (t.indexOf("NESTED") >= 0 || t.indexOf("CONTENT SECTIONS + NESTED") >= 0) &&
+        t.indexOf("NESTED PATTERN") < 0 &&
+        (t.indexOf("No page copy") >= 0 || t.indexOf("id, label, mode, rule") >= 0) &&
+        (t.indexOf("template_hint") >= 0 || t.indexOf("PAGE block") >= 0) &&
+        t.indexOf("hero_brand_name") < 0;
+    }
+    if (t.indexOf("hearing-driven structure") < 0) return false;
+    return t.indexOf("PAGE COMPOSITION RULES") >= 0 || t.length > 500;
+  }
+
+  function englishSystemForType(tid) {
+    var fromPack = packValueFor(tid, "value");
+    if (isGoodWriterPrompt(fromPack)) return fromPack;
+    return defaultWriterForType(tid);
+  }
+
+  function resolvePromptValue(tid, raw) {
+    var v = String(raw || "").trim();
+    if (isGoodWriterPrompt(v)) return v;
+    var fromPack = packValueFor(tid, "value");
+    if (isGoodWriterPrompt(fromPack)) return fromPack;
+    return defaultWriterForType(tid);
+  }
+
+  function resolvePlannerValue(tid, raw) {
+    var v = String(raw || "").trim();
+    if (isGoodPlannerPrompt(tid, v)) return v;
+    var fromPack = packValueFor(tid, "planner_value");
+    if (isGoodPlannerPrompt(tid, fromPack)) return fromPack;
+    return defaultPlannerForType(tid);
+  }
+
+  function resolveUserTemplate(tid, raw) {
+    var v = String(raw || "").trim();
+    if (!v || promptLooksJapanese(v) || v.indexOf("{page_rules}") < 0) {
+      var label = {
+        type1: "Type 1 (new site)",
+        type2: "Type 2 (renewal)",
+        type3: "Type 3 (satellite)",
+        type4: "Type 4 (satellite renewal)"
+      }[tid] || tid;
+      return label + " — write Japanese section copy from THIS hearing sheet only.\n" +
+        "Following the permitted facts and page rules, write Japanese copy for each section id.\n" +
+        "Output JSON key: sections (object) — each key is a section id, value is a Japanese body string.\n" +
+        "No Markdown. If the hearing has no fact for a section, use an empty string. Do not invent topics.\n" +
+        "{page_rules}\n\n{hearing}";
+    }
+    return v;
+  }
+
+  function promptPackFromConfig() {
+    var cfg = state.config || {};
+    var titles = {
+      type1: "Type 1 — New site",
+      type2: "Type 2 — Renewal",
+      type3: "Type 3 — Satellite",
+      type4: "Type 4 — Satellite renewal"
+    };
+    var descriptions = {
+      type1: "AI-1 structure + AI-2 content for Type 1 (new site).",
+      type2: "AI-1 structure + AI-2 content for Type 2 (renewal).",
+      type3: "AI-1 structure + AI-2 content for Type 3 (satellite).",
+      type4: "AI-1 structure + AI-2 content for Type 4 (satellite renewal)."
+    };
+    var tp = cfg.type_prompts || {};
+    var packSections = (cfg.prompt_pack && cfg.prompt_pack.sections) || [];
+    var byId = {};
+    packSections.forEach(function (s) {
+      if (s && (s.id || s.type_id)) byId[s.id || s.type_id] = s;
+    });
+    var sections = ["type1", "type2", "type3", "type4"].map(function (tid) {
+      var fromPack = byId[tid] || {};
+      var slot = tp[tid] || {};
+      return {
+        id: tid,
+        type_id: tid,
+        title: fromPack.title || titles[tid],
+        description: descriptions[tid],
+        value: resolvePromptValue(tid, fromPack.value || slot.system_prompt || ""),
+        planner_value: resolvePlannerValue(
+          tid,
+          fromPack.planner_value || slot.planner_system_prompt || ""
+        ),
+        user_value: resolveUserTemplate(
+          tid,
+          fromPack.user_value || slot.user_prompt_template || ""
+        )
+      };
+    });
+    return {
+      mode: "per_type",
+      language: "en",
+      hint: "One AI-1 (structure) and AI-2 (content) prompt set per hearing type.",
+      sections: sections
+    };
+  }
+
+  function promptPackPanelHtml() {
+    var pack = promptPackFromConfig();
+    var sections = pack.sections || [];
+    var activeId = state.promptPackTab || "type1";
+    var active = null;
+    for (var i = 0; i < sections.length; i++) {
+      if (sections[i].id === activeId) { active = sections[i]; break; }
+    }
+    if (!active && sections.length) active = sections[0];
+    if (active) state.promptPackTab = active.id;
+    var tabs = sections.map(function (s) {
+      var short = String(s.id || "").replace("type", "Type ");
+      return '<button type="button" data-prompt-pack="' + esc(s.id) + '"' +
+        (active && active.id === s.id ? ' class="on"' : "") +
+        ' title="' + esc(s.title || s.id) + '">' +
+        esc(short) + "</button>";
+    }).join("");
+    var tid = active ? (active.type_id || active.id || "") : "";
+    var body = active
+      ? '<p class="prompt-note" style="margin-top:0">' + esc(active.description || "") + "</p>" +
+        '<label class="prompt-pack-label">AI-1 — Structure prompt (' + esc(active.title || tid) + ")</label>" +
+        '<textarea id="promptPackPlanner" data-prompt-type="' + esc(tid) +
+        '" class="prompt-pack-ta">' + esc(active.planner_value || "") + "</textarea>" +
+        '<label class="prompt-pack-label" style="margin-top:14px">AI-2 — Writer system prompt</label>' +
+        '<textarea id="promptPackBody" data-prompt-type="' + esc(tid) +
+        '" class="prompt-pack-ta">' + esc(active.value || "") + "</textarea>" +
+        '<label class="prompt-pack-label" style="margin-top:14px">AI-2 — User template (this type only)</label>' +
+        '<textarea id="promptPackUser" data-prompt-type="' + esc(tid) +
+        '" class="prompt-pack-ta" style="min-height:120px">' + esc(active.user_value || "") + "</textarea>"
+      : "";
+    return '<div class="prompt-pack" id="promptPackPanel">' +
+      '<p class="prompt-note">' + esc(pack.hint || "") + "</p>" +
+      '<div class="prompt-tabs" id="promptPackTabs">' + tabs + "</div>" +
+      body +
+      "</div>";
+  }
+
+  function collectPromptPackValues(prevCfg) {
+    prevCfg = prevCfg || {};
+    var pack = promptPackFromConfig();
+    var typePrompts = {};
+    var prevTp = prevCfg.type_prompts || {};
+    ["type1", "type2", "type3", "type4"].forEach(function (tid) {
+      var prev = (prevTp[tid] && typeof prevTp[tid] === "object") ? prevTp[tid] : {};
+      var fromPack = null;
+      (pack.sections || []).forEach(function (s) {
+        if (s.id === tid || s.type_id === tid) fromPack = s;
+      });
+      typePrompts[tid] = {
+        system_prompt: resolvePromptValue(tid, (fromPack && fromPack.value) || prev.system_prompt || ""),
+        planner_system_prompt: resolvePlannerValue(tid, (fromPack && fromPack.planner_value) || prev.planner_system_prompt || ""),
+        user_prompt_template: resolveUserTemplate(tid, (fromPack && fromPack.user_value) || prev.user_prompt_template || "")
+      };
+    });
+    var tidEl = document.getElementById("promptPackBody");
+    var tid = tidEl ? (tidEl.getAttribute("data-prompt-type") || "") : "";
+    if (tid && typePrompts[tid]) {
+      var plannerEl = document.getElementById("promptPackPlanner");
+      var userEl = document.getElementById("promptPackUser");
+      if (plannerEl) typePrompts[tid].planner_system_prompt = resolvePlannerValue(tid, plannerEl.value);
+      if (tidEl) typePrompts[tid].system_prompt = resolvePromptValue(tid, tidEl.value);
+      if (userEl) typePrompts[tid].user_prompt_template = resolveUserTemplate(tid, userEl.value);
+    }
+    return {
+      type_prompts: typePrompts,
+      system_prompt: (typePrompts.type3 && typePrompts.type3.system_prompt) || prevCfg.system_prompt || "",
+      planner_system_prompt: (typePrompts.type3 && typePrompts.type3.planner_system_prompt) || prevCfg.planner_system_prompt || "",
+      user_prompt_template: (typePrompts.type3 && typePrompts.type3.user_prompt_template) || prevCfg.user_prompt_template || "",
+      type24_extras_prompt: prevCfg.type24_extras_prompt || ""
+    };
+  }
+
+  function bindPromptPackTabs() {
+    var root = document.getElementById("promptPackPanel");
+    if (!root) return;
+    root.querySelectorAll("[data-prompt-pack]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (!state.config) state.config = {};
+        if (!state.config.type_prompts) state.config.type_prompts = {};
+        var tidEl = document.getElementById("promptPackBody");
+        var tid = tidEl ? (tidEl.getAttribute("data-prompt-type") || "") : "";
+        if (tid) {
+          if (!state.config.type_prompts[tid]) state.config.type_prompts[tid] = {};
+          var plannerEl = document.getElementById("promptPackPlanner");
+          var userEl = document.getElementById("promptPackUser");
+          if (plannerEl) state.config.type_prompts[tid].planner_system_prompt = plannerEl.value;
+          if (tidEl) state.config.type_prompts[tid].system_prompt = tidEl.value;
+          if (userEl) state.config.type_prompts[tid].user_prompt_template = userEl.value;
+          if (state.config.prompt_pack && state.config.prompt_pack.sections) {
+            state.config.prompt_pack.sections.forEach(function (s) {
+              if (s.id === tid || s.type_id === tid) {
+                if (plannerEl) s.planner_value = plannerEl.value;
+                if (tidEl) s.value = tidEl.value;
+                if (userEl) s.user_value = userEl.value;
+              }
+            });
+          }
+        }
+        state.promptPackTab = btn.getAttribute("data-prompt-pack") || "type1";
+        var openAdv = document.querySelector("details.prompt-advanced");
+        state.showAdvanced = !!(openAdv && openAdv.open);
+        draw();
+      });
+    });
   }
 
   function viewConfig() {
@@ -1136,12 +1641,15 @@
         : '<div class="gate-bar ok hid" id="configGateBar" aria-hidden="true">' +
           '<div><p class="gate-title" id="configGateTitle"></p>' +
           '<p class="gate-hint" id="configGateHint"></p></div></div>') +
-      '<details style="margin-top:16px"' + (state.showAdvanced ? " open" : "") + ">" +
+      '<details class="prompt-advanced" style="margin-top:16px"' + (state.showAdvanced ? " open" : "") + ">" +
       '<summary style="cursor:pointer;font-weight:700">Advanced: prompts</summary>' +
-      "<label>System prompt</label><textarea id=\"systemPrompt\">" + esc(cfg.system_prompt) + "</textarea>" +
-      "<label>User prompt template</label><textarea id=\"userPrompt\">" + esc(cfg.user_prompt_template) + "</textarea>" +
-      '<p class="prompt-note" style="margin-top:16px">Advanced (optional). Clients can ignore this. After AI-1, review the page &amp; block map below.</p>' +
-      promptSectionPanelHtml() +
+      (state.showAdvanced
+        ? (
+          promptPackPanelHtml() +
+          '<p class="prompt-note" style="margin-top:16px"><b>After AI-1</b> — page &amp; block map (observe structure accuracy):</p>' +
+          promptSectionPanelHtml()
+        )
+        : '<p class="prompt-note">Open this section to edit per-type AI-1 / AI-2 prompts.</p>') +
       "</details>" +
       '<div class="actions">' +
       '<button class="btn g" id="saveConfig"' + (gateErr ? " disabled" : "") +
@@ -1265,13 +1773,15 @@
         saveBtn.disabled = true;
         saveBtn.textContent = Object.keys(keys).length ? "Checking key…" : "Saving…";
       }
-      var sysEl = document.getElementById("systemPrompt");
-      var userEl = document.getElementById("userPrompt");
+      var prompts = collectPromptPackValues(state.config || {});
       var body = {
         keys: keys,
         selected_models: (state.selected || []).slice(0, V2_MAX_MODELS),
-        system_prompt: sysEl ? sysEl.value : ((state.config && state.config.system_prompt) || ""),
-        user_prompt_template: userEl ? userEl.value : ((state.config && state.config.user_prompt_template) || "")
+        system_prompt: prompts.system_prompt || "",
+        user_prompt_template: prompts.user_prompt_template || "",
+        planner_system_prompt: prompts.planner_system_prompt || "",
+        type24_extras_prompt: prompts.type24_extras_prompt || "",
+        type_prompts: prompts.type_prompts || {}
       };
       var res = await fetch(api("/v2/lab/config"), {
         method: "PUT",
@@ -1403,6 +1913,17 @@
   function bindConfig() {
     var save = document.getElementById("saveConfig");
     if (save) save.onclick = saveConfig;
+    var adv = document.querySelector("details.prompt-advanced");
+    if (adv) {
+      adv.addEventListener("toggle", function () {
+        var wantOpen = !!adv.open;
+        if (wantOpen === !!state.showAdvanced) return;
+        state.showAdvanced = wantOpen;
+        // Lazy-render heavy prompt editors only when opened
+        draw();
+      });
+    }
+    bindPromptPackTabs();
     bindPageBrowser("promptPageBrowser", function (pick) {
       if (pick.group) {
         state.pageGroup = pick.group;
@@ -1410,7 +1931,9 @@
         state.promptPage = ensureActiveInGroup(tabs, state.promptPage, state.pageGroup);
       }
       if (pick.id) state.promptPage = pick.id;
-      state.showAdvanced = true;
+      // Only keep open if the Advanced panel is already open (user is editing inside it)
+      var openAdv = document.querySelector("details.prompt-advanced");
+      state.showAdvanced = !!(openAdv && openAdv.open);
       draw();
     });
     document.querySelectorAll("[data-mega-trigger]").forEach(function (btn) {
@@ -2095,7 +2618,7 @@
     var n = (state.sections || []).length;
     var sheetsOk = !!(window.BbsV2Sheets && window.BbsV2Sheets.isConfigured(state.config));
     var sheetsHint = sheetsOk
-      ? "Google Spreadsheet（Overview / Pages / ナビ / SEO / タグ / All）→ Drive「" +
+      ? "Google Spreadsheet（タブ2つ: AI-1 Sections / AI-2 Contents）→ Drive「" +
         esc((state.config && state.config.google_sheets && state.config.google_sheets.folderName) || "BBS-CMS-LAB") +
         "」"
       : "GOOGLE_CLIENT_ID が未設定です（.env）";
@@ -2106,7 +2629,7 @@
       ? ('<button class="btn g" id="downloadSheets"' + (n && sheetsOk && !state.exporting ? "" : " disabled") +
         ">" + esc(exportButtonLabel()) + "</button>")
       : "";
-    return '<div class="card"><h2>Download</h2><p class="lead">CSV または Google Spreadsheet で出力。</p>' +
+    return '<div class="card"><h2>Download</h2><p class="lead">Excel / Google Spreadsheet（AI-1 + AI-2 test packs）で出力。</p>' +
       "<p>Rows: <b>" + n + "</b></p>" +
       (state.sessionRestored
         ? '<div class="gate-bar ok"><p class="gate-hint">前回の進捗を復元しました。<b>New generation</b> でクリア。</p></div>'
@@ -2116,7 +2639,8 @@
       (state.exporting ? runProgressHtml(state.exportProgress, "Google Spreadsheet 出力") : "") +
       '<div class="actions"><button class="btn" id="toSections"' + (state.exporting ? " disabled" : "") + ">Back</button>" +
       (state.exporting ? "" : newGenerationBtnHtml()) +
-      '<button class="btn g" id="downloadCsv"' + (n && !state.exporting ? "" : " disabled") + ">CSV</button>" +
+      '<button class="btn g" id="downloadXlsx"' + (n && !state.exporting ? "" : " disabled") + ">Excel (AI-1+AI-2)</button>" +
+      '<button class="btn" id="downloadCsv"' + (n && !state.exporting ? "" : " disabled") + ">CSV</button>" +
       exportBtn +
       reopenBtn +
       "</div></div>";
@@ -2173,6 +2697,8 @@
     });
     var dlCsv = document.getElementById("downloadCsv");
     if (dlCsv) dlCsv.onclick = downloadCsv;
+    var dlXlsx = document.getElementById("downloadXlsx");
+    if (dlXlsx) dlXlsx.onclick = downloadXlsx;
     var dlSheets = document.getElementById("downloadSheets");
     if (dlSheets) dlSheets.onclick = downloadGoogleSheets;
     var reopen = document.getElementById("reopenSheets");
@@ -2182,18 +2708,36 @@
   }
 
   function draw() {
-    stepper();
-    document.getElementById("view").innerHTML = {
-      config: viewConfig,
-      hearing: viewHearing,
-      planner: viewPlanner,
-      draft: viewDraft,
-      sections: viewSections,
-      export: viewExport
-    }[state.step]();
-    bindConfig();
-    bindHearing();
-    bindNav();
+    var stepIds = { config: 1, hearing: 1, planner: 1, draft: 1, sections: 1, export: 1 };
+    if (!stepIds[state.step]) state.step = "config";
+    try {
+      stepper();
+      var view = document.getElementById("view");
+      if (!view) return;
+      var renderer = {
+        config: viewConfig,
+        hearing: viewHearing,
+        planner: viewPlanner,
+        draft: viewDraft,
+        sections: viewSections,
+        export: viewExport
+      }[state.step];
+      view.innerHTML = typeof renderer === "function" ? renderer() : viewConfig();
+      bindConfig();
+      bindHearing();
+      bindNav();
+    } catch (err) {
+      state.step = "config";
+      state.showAdvanced = false;
+      var viewEl = document.getElementById("view");
+      if (viewEl) {
+        viewEl.innerHTML = '<div class="card"><h2>Config</h2><p class="lead">UI recovered after a render error.</p>' +
+          '<p class="msg err">' + esc((err && err.message) || String(err)) + "</p>" +
+          '<div class="actions"><button class="btn g" id="saveConfig">Save &amp; continue</button></div></div>';
+      }
+      try { bindConfig(); } catch (e2) { /* ignore */ }
+      msg((err && err.message) || "UI render failed", false);
+    }
   }
 
   async function uploadHearingText(text, filename) {
@@ -2354,7 +2898,6 @@
       state.promptSections = data.prompt_sections || null;
       if (state.promptSections && state.promptSections.tabs && state.promptSections.tabs.length) {
         state.promptPage = state.promptSections.tabs[0].id || "home";
-        state.showAdvanced = true;
       }
       var st = state.blueprint.stats || {};
       msg("AI-1 complete — " + state.sections.length + " rows · " +
@@ -2561,10 +3104,28 @@
     }
   }
 
+  function exportBody(format) {
+    var cfg = state.config || {};
+    var tid = String((state.hearing && state.hearing.production_type) ||
+      (state.blueprint && state.blueprint.production_type) || "type3");
+    var slot = (cfg.type_prompts && cfg.type_prompts[tid]) || {};
+    return {
+      blueprint: state.blueprint,
+      sections: state.sections,
+      format: format || "packs",
+      hearing: state.hearing || {},
+      hearing_file: state.hearingFile || "",
+      hearing_url: "",
+      model_ids: (state.selected || []).slice(0, 2),
+      planner_system_prompt: slot.planner_system_prompt || cfg.planner_system_prompt || "",
+      system_prompt: slot.system_prompt || cfg.system_prompt || ""
+    };
+  }
+
   async function downloadCsv() {
     var res = await fetch(api("/v2/lab/export"), {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ blueprint: state.blueprint, sections: state.sections, format: "csv" })
+      body: JSON.stringify(exportBody("csv"))
     });
     var data = await res.json();
     if (!res.ok || !data.csv) { msg("Export failed", false); return; }
@@ -2572,6 +3133,32 @@
     a.href = URL.createObjectURL(new Blob([data.csv], { type: "text/csv;charset=utf-8" }));
     a.download = (state.blueprint.site_name || "site") + "-sections.csv";
     a.click();
+  }
+
+  async function downloadXlsx() {
+    if (!(state.sections || []).length) {
+      msg("No sections to export — run AI-1 / Section Content first.", false);
+      return;
+    }
+    var res = await fetch(api("/v2/lab/export"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(exportBody("xlsx"))
+    });
+    var data = await res.json();
+    if (!res.ok || !data.xlsx_base64) {
+      msg((data && data.xlsx_error) || "Excel export failed", false);
+      return;
+    }
+    var bin = atob(data.xlsx_base64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([bytes], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }));
+    a.download = (state.blueprint.site_name || "site") + "-AI1-AI2-packs.xlsx";
+    a.click();
+    msg("Downloaded AI-1 + AI-2 Excel packs", true);
   }
 
   function openExportedSpreadsheet() {
@@ -2613,6 +3200,10 @@
       msg("No sections to export — run AI-1 / Section Content first.", false);
       return;
     }
+    if (!window.BbsV2Sheets.exportTestPacks) {
+      msg("Sheets script outdated — hard refresh (Ctrl+Shift+R).", false);
+      return;
+    }
     if (state.exporting) return;
 
     state.exporting = true;
@@ -2620,7 +3211,7 @@
       index: 0,
       total: 0,
       page: "",
-      label: "Google Spreadsheet 接続中…",
+      label: "Export packs 準備中…",
       active: [],
       log: [],
       startedAt: Date.now(),
@@ -2630,12 +3221,19 @@
     draw();
     startProgressTimer();
     try {
-      var result = await window.BbsV2Sheets.exportSectionRows({
+      var packRes = await fetch(api("/v2/lab/export"), {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(exportBody("packs"))
+      });
+      var packData = await packRes.json();
+      if (!packRes.ok || !packData.packs) {
+        throw new Error((packData && packData.detail) || "Failed to build AI-1/AI-2 packs");
+      }
+      var result = await window.BbsV2Sheets.exportTestPacks({
         config: state.config,
-        rows: state.sections,
-        blueprint: state.blueprint || {},
+        packs: packData.packs,
         title: (state.blueprint && state.blueprint.site_name ? state.blueprint.site_name : "site") +
-          "-sections-" + new Date().toISOString().slice(0, 10),
+          "-AI1-AI2-" + new Date().toISOString().slice(0, 10),
         onProgress: function (p) {
           state.exportProgress.index = p.index || state.exportProgress.index;
           state.exportProgress.total = p.total || state.exportProgress.total;
@@ -2651,13 +3249,12 @@
       state.sheetsUrl = result.spreadsheetUrl || "";
       state.exportProgress.soft_pct = 100;
       state.exportProgress.index = state.exportProgress.total || state.exportProgress.index;
-      state.exportProgress.label = "完了 — " + (result.rowCount || 0) + " rows";
+      state.exportProgress.label = "完了 — AI-1 + AI-2 packs";
       state.exportProgress.active = [];
       pushProgressLog(state.exportProgress, state.exportProgress.label);
       persistLabSession();
       msg(state.exportProgress.label, true);
       patchLiveProgress();
-      // Open sheet tab only after generation finishes
       if (state.sheetsUrl) {
         var w = null;
         try { w = window.open(state.sheetsUrl, "_blank", "noopener"); } catch (e0) { w = null; }
@@ -2675,11 +3272,26 @@
   }
 
   async function init() {
-    try { await loadConfig(); } catch (e) { msg("Config load failed", false); }
+    state.showAdvanced = false;
+    var viewBoot = document.getElementById("view");
+    if (viewBoot) {
+      viewBoot.innerHTML = '<div class="card"><p class="lead">Loading config…</p></div>';
+    }
+    try {
+      await loadConfig();
+    } catch (e) {
+      msg("Config load failed" + (e && e.message ? (": " + e.message) : ""), false);
+    }
     if (window.BbsV2Sheets && window.BbsV2Sheets.preload) {
       window.BbsV2Sheets.preload().catch(function () { /* ignore */ });
     }
-    var restored = restoreLabSession();
+    var restored = false;
+    try {
+      restored = restoreLabSession();
+    } catch (e) {
+      restored = false;
+    }
+    state.showAdvanced = false;
     if (restored) {
       msg("前回の進捗を復元しました（" + state.step + "）", true);
     }

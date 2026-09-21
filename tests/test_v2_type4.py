@@ -46,8 +46,12 @@ def test_type4_blueprint_satellite_plus_renewal():
         assert kw in seeds
     slugs = [p["slug"] for p in bp["pages"]]
     assert slugs[0] == "home"
-    for required in ("access", "blog", "reviews", "contact", "sitemap", "privacy", "column"):
+    for required in ("access", "blog", "contact", "sitemap", "privacy", "column"):
         assert required in slugs
+    # page composition ② — type4 sample has 口コミ表示1=表示しない → no reviews page
+    assert "reviews" not in slugs
+    assert hearing["flags"].get("include_reviews") is False
+    assert "ai-blog" in slugs
     assert "reason" in slugs or "concept" in slugs
     assert "service" in slugs
     sat = bp["satellite"]

@@ -260,15 +260,33 @@ def load_lab_config() -> dict[str, Any]:
     user_prompt_template = str(
         raw.get("user_prompt_template") or base["user_prompt_template"]
     )
+    planner_system_prompt = str(raw.get("planner_system_prompt") or "").strip()
+    type24_extras_prompt = str(raw.get("type24_extras_prompt") or "").strip()
+    type_prompts_raw = raw.get("type_prompts") if isinstance(raw.get("type_prompts"), dict) else {}
+    # Satellite v2 templates use {page_rules} on purpose — keep them.
+    satellite_user = (
+        "{page_rules}" in user_prompt_template
+        and (
+            "sections" in user_prompt_template
+            or "section id" in user_prompt_template.lower()
+            or "Following the permitted facts" in user_prompt_template
+        )
+    )
     # Restore classic lab template if a prior {page_rules} experiment was saved.
-    if "{page_rules}" in user_prompt_template or "--- TOP RULES ---" in user_prompt_template:
+    if not satellite_user and (
+        "{page_rules}" in user_prompt_template or "--- TOP RULES ---" in user_prompt_template
+    ):
         user_prompt_template = base["user_prompt_template"]
         system_prompt = base["system_prompt"]
     # Upgrade legacy short templates missing the 6-paragraph rule.
-    elif "必ず6要素" not in user_prompt_template and "{hearing}" in user_prompt_template:
+    elif (
+        not satellite_user
+        and "必ず6要素" not in user_prompt_template
+        and "{hearing}" in user_prompt_template
+    ):
         user_prompt_template = base["user_prompt_template"]
         system_prompt = base["system_prompt"]
-    return {
+    out = {
         "keys": keys,
         "selected_models": selected,
         "system_prompt": system_prompt,
@@ -276,6 +294,13 @@ def load_lab_config() -> dict[str, Any]:
         "updated_at": str(raw.get("updated_at") or ""),
         "provider_accounts": dict(raw.get("provider_accounts") or {}),
     }
+    if planner_system_prompt:
+        out["planner_system_prompt"] = planner_system_prompt
+    if type24_extras_prompt:
+        out["type24_extras_prompt"] = type24_extras_prompt
+    if type_prompts_raw:
+        out["type_prompts"] = type_prompts_raw
+    return out
 
 
 def save_lab_config(cfg: dict[str, Any]) -> None:
@@ -389,6 +414,9 @@ def public_config(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
         "selected_models": cfg.get("selected_models") or [],
         "system_prompt": cfg.get("system_prompt") or "",
         "user_prompt_template": cfg.get("user_prompt_template") or "",
+        "planner_system_prompt": cfg.get("planner_system_prompt") or "",
+        "type24_extras_prompt": cfg.get("type24_extras_prompt") or "",
+        "type_prompts": cfg.get("type_prompts") or {},
         "prompt_sections": prompt_sections_catalog(),
         "models": models,
         "provider_accounts": {
@@ -407,6 +435,9 @@ class LabConfigIn(BaseModel):
     selected_models: list[str] = Field(default_factory=list)
     system_prompt: str = ""
     user_prompt_template: str = ""
+    planner_system_prompt: str = ""
+    type24_extras_prompt: str = ""
+    type_prompts: dict[str, Any] = Field(default_factory=dict)
     clear_keys: list[str] = Field(default_factory=list)
     # e.g. {"gemini": true} means Google project has billing enabled → Flash becomes paid
     billing_overrides: dict[str, bool] = Field(default_factory=dict)
@@ -1056,6 +1087,19 @@ def _ensure_selected_keys(registry: ModelRegistry, model_ids: list[str]) -> None
 def lab_get_config() -> dict[str, Any]:
     cfg = load_lab_config()
     before = json.dumps(cfg.get("provider_accounts") or {}, sort_keys=True)
+    # Ensure v2 per-type packs exist, but never clobber classic v1 flat prompts
+    # (Japanese salon / brand_name・catchcopy TOP writer) with Type 3 satellite text.
+    try:
+        from ai_agent.v2.prompt_packs import merge_type_prompts
+
+        before_tp = json.dumps(cfg.get("type_prompts") or {}, sort_keys=True, ensure_ascii=False)
+        cfg["type_prompts"] = merge_type_prompts(cfg)
+        after_tp = json.dumps(cfg.get("type_prompts") or {}, sort_keys=True, ensure_ascii=False)
+        if after_tp != before_tp:
+            cfg["updated_at"] = datetime.now(UTC).isoformat()
+            save_lab_config(cfg)
+    except Exception:
+        pass
     out = public_config(cfg)
     after = json.dumps(cfg.get("provider_accounts") or {}, sort_keys=True)
     if after != before:
@@ -1135,6 +1179,39 @@ def lab_put_config(body: LabConfigIn) -> dict[str, Any]:
         cfg["system_prompt"] = body.system_prompt
     if body.user_prompt_template.strip():
         cfg["user_prompt_template"] = body.user_prompt_template
+    if body.planner_system_prompt.strip():
+        cfg["planner_system_prompt"] = body.planner_system_prompt
+    if body.type24_extras_prompt.strip():
+        cfg["type24_extras_prompt"] = body.type24_extras_prompt
+    if body.type_prompts:
+        # Merge per-type system prompts (Type 1–4).
+        existing = cfg.get("type_prompts") if isinstance(cfg.get("type_prompts"), dict) else {}
+        merged_tp: dict[str, Any] = dict(existing)
+        for tid, slot in body.type_prompts.items():
+            if not isinstance(slot, dict):
+                continue
+            key = str(tid or "").strip().lower()
+            if key not in {"type1", "type2", "type3", "type4"}:
+                continue
+            prev = merged_tp.get(key) if isinstance(merged_tp.get(key), dict) else {}
+            next_slot = dict(prev)
+            if str(slot.get("system_prompt") or "").strip():
+                next_slot["system_prompt"] = str(slot.get("system_prompt") or "").strip()
+            if str(slot.get("planner_system_prompt") or "").strip():
+                next_slot["planner_system_prompt"] = str(slot.get("planner_system_prompt") or "").strip()
+            if str(slot.get("user_prompt_template") or "").strip():
+                next_slot["user_prompt_template"] = str(slot.get("user_prompt_template") or "").strip()
+            merged_tp[key] = next_slot
+        cfg["type_prompts"] = merged_tp
+        # Do not sync type3 → flat system_prompt. v1 lab uses flat JP prompts;
+        # v2 lab reads type_prompts.* per production type.
+    # Keep type_prompts complete for v2, without overwriting classic v1 flat prompts.
+    try:
+        from ai_agent.v2.prompt_packs import merge_type_prompts
+
+        cfg["type_prompts"] = merge_type_prompts(cfg)
+    except Exception:
+        pass
     cfg["keys"] = keys
     cfg["selected_models"] = selected
     for provider, enabled in (body.billing_overrides or {}).items():

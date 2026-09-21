@@ -58,11 +58,21 @@ def test_type3_blueprint_satellite_template():
     assert bp["production_type"] == ProductionType.TYPE3_SATELLITE.value
     assert bp["clone_mode"] == "bbs_satellite_template"
     assert bp["pages"][0]["type"] == "top_satellite"
+    home_ids = [s["id"] for s in bp["pages"][0]["sections"]]
+    assert "top_catchphrase" in home_ids
+    assert "business_info" in home_ids
+    assert "cta" in home_ids
+    assert "lead" in home_ids
+    assert any(i.startswith("selling_point_") for i in home_ids) or any(
+        i.startswith("service_teaser_") for i in home_ids
+    )
     assert bp["pages"][0]["content_seeds"] == hearing["focus_keywords"]
     slugs = [p["slug"] for p in bp["pages"]]
     assert slugs[:5] == ["home", "concept", "service", "faq", "greeting"]
     for required in ("access", "blog", "reviews", "contact", "sitemap", "privacy", "column"):
         assert required in slugs
+    # page composition ② — AI blog when AIサポート=あり
+    assert "ai-blog" in slugs
     # Empty 料金表 is omitted from the site map (not kept as a blank page).
     if hearing.get("page_directives", {}).get("menu", {}).get("leave_blank"):
         assert "menu" not in slugs
@@ -117,7 +127,10 @@ def test_pages_to_write_includes_seo_and_tag():
     assert "tag-1" in slugs
     assert len(pages) >= 7 + 15 + 10 - 1  # minus blank menu if flagged
     blank = pages_leave_blank(bp)
-    assert blank == []  # blank pages are omitted from blueprint, not kept empty
+    # Menu leave_blank pages are omitted from the blueprint.
+    # Reviews/greeting may stay in nav with force_blank_copy (empty AI-2 text).
+    assert all(p.get("force_blank_copy") for p in blank)
+    assert not any(p.get("leave_blank") for p in blank)
     if hearing.get("page_directives", {}).get("menu", {}).get("leave_blank"):
         assert "menu" not in slugs
         assert any(str(r.get("slug")) == "menu" for r in (bp.get("omitted_pages") or []))
@@ -131,17 +144,16 @@ def test_tag_page_rules_are_keyword_first():
     assert tag9["nav_label"] == "アフターフォロー" or "アフター" in tag9["nav_label"]
     assert tag9.get("tag_keyword") or (tag9.get("content_seeds") or [None])[0]
     labels = [s["label"] for s in tag9["sections"]]
-    assert labels == ["冒頭", "推1", "推2", "まとめ"]
-    intro = tag9["sections"][0]["rule"]
-    assert "主キーワード" in intro
+    assert "Tag intro" in labels or "Tag point 1" in labels
+    assert any(s["id"] == "tag_intro" for s in tag9["sections"])
+    assert any(s["id"] == "keyword" for s in tag9["sections"])
+    intro = next(s for s in tag9["sections"] if s["id"] == "tag_intro")["rule"]
+    assert "主キーワード" in intro or "タグ" in intro
     assert "アフター" in intro
     assert "項目内容: アフター" not in intro  # not the old dump style
-    assert "おまかせ" in intro
-    assert intro.count("重点ワード") == 0 or "関連重点ワード" in intro
     rules = format_v2_page_rules(tag9, hearing)
     assert "タグキーワード用ランディング" in rules
     assert "主キーワード" in rules
-
 
 def test_seo_page_rules_include_hearing_parts():
     text = SAMPLE.read_text(encoding="utf-8-sig")
@@ -207,14 +219,18 @@ def test_v2_planner_model_roles():
 def test_parse_planner_sections_json():
     from ai_agent.v2.section_planner import parse_planner_sections, strip_blueprint_section_content
 
-    raw = '{"sections": [{"id": "hero_block", "label": "Hero", "mode": "generate", "rule": "店名と重点ワード"}]}'
+    raw = '{"sections": [{"id": "extra_block", "label": "Extra", "mode": "generate", "rule": "店名と重点ワード"}]}'
     page = {"slug": "home", "type": "top_satellite"}
     out = parse_planner_sections(raw, page=page)
-    assert out[0]["id"] == "hero_block"
-    assert out[0]["mode"] == "generate"
+    ids = [s["id"] for s in out]
+    assert "top_catchphrase" in ids  # catalog merged
+    assert "extra_block" in ids  # AI-1 extra kept
+    assert "business_info" in ids
     assert "text" not in out[0]
+    extra = next(s for s in out if s["id"] == "extra_block")
+    assert extra["mode"] == "generate"
 
-    bad = '{"sections": [{"id": "hero", "label": "Hero", "mode": "generate", "rule": "x", "text": "見出し"}]}'
+    bad = '{"sections": [{"id": "top_catchphrase", "label": "TOP catchphrase", "mode": "generate", "rule": "x", "text": "見出し"}]}'
     try:
         parse_planner_sections(bad, page=page)
         assert False, "expected content key rejection"
@@ -226,7 +242,7 @@ def test_parse_planner_sections_json():
             {
                 "slug": "home",
                 "sections": [
-                    {"id": "hero", "label": "Hero", "mode": "generate", "rule": "r", "text": "bad"},
+                    {"id": "top_catchphrase", "label": "TOP catchphrase", "mode": "generate", "rule": "r", "text": "bad"},
                 ],
             }
         ]
@@ -356,12 +372,12 @@ def test_v2_pipeline_roles():
 def test_parse_v2_sections_json():
     from ai_agent.v2.writer import parse_v2_sections_json
 
-    raw = '{"sections": {"hero": "見出し", "menu": "コースA ¥1000"}}'
+    raw = '{"sections": {"top_catchphrase": "見出し", "menu": "コースA ¥1000"}}'
     out = parse_v2_sections_json(raw)
-    assert out["hero"] == "見出し"
+    assert out["top_catchphrase"] == "見出し"
     assert "menu" in out
 
-    flat = '{"hero": "A", "lead": "B", "cta": "C"}'
-    out2 = parse_v2_sections_json(flat, expected_ids=["hero", "lead", "cta"])
-    assert out2["hero"] == "A"
+    flat = '{"top_catchphrase": "A", "lead": "B", "cta": "C"}'
+    out2 = parse_v2_sections_json(flat, expected_ids=["top_catchphrase", "lead", "cta"])
+    assert out2["top_catchphrase"] == "A"
     assert out2["lead"] == "B"

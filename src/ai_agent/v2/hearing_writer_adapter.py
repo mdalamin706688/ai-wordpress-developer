@@ -54,6 +54,38 @@ def v2_hearing_to_production(hearing: dict[str, Any]) -> dict[str, Any]:
         out["hours"] = f"{hours_open}–{hours_close}".strip("–")
     out["closed"] = str(store.get("closed") or "").strip()
 
+    # page composition ② conditionals + page facts for AI-2
+    flags = hearing.get("flags") if isinstance(hearing.get("flags"), dict) else {}
+    out["flags"] = {
+        "include_reviews": bool(flags.get("include_reviews")),
+        "include_recruit": bool(flags.get("include_recruit")),
+        "include_ai_blog": bool(flags.get("include_ai_blog")),
+    }
+    out["production_kind"] = str(project.get("production_kind") or "").strip()
+    out["site_purpose"] = str(project.get("purpose") or "").strip()
+    out["public_domain"] = str(project.get("domain") or "").strip()
+    out["site_category"] = str(
+        project.get("site_category") or hearing.get("site_category") or ""
+    ).strip()
+    brief = project.get("site_brief") if isinstance(project.get("site_brief"), dict) else hearing.get("site_brief")
+    if isinstance(brief, dict) and brief:
+        out["site_brief"] = brief
+    out["ai_support"] = str(project.get("ai_support") or "").strip()
+    out["existing_url"] = str(project.get("existing_url") or "").strip()
+    out["existing_site_copy"] = str(project.get("existing_site_copy") or "").strip()
+    reviews = hearing.get("reviews") or []
+    if isinstance(reviews, list) and reviews:
+        out["reviews"] = reviews
+    recruit = hearing.get("recruit") if isinstance(hearing.get("recruit"), dict) else {}
+    if recruit:
+        out["recruit"] = recruit
+    ai_blog = hearing.get("ai_blog") if isinstance(hearing.get("ai_blog"), dict) else {}
+    if ai_blog:
+        out["ai_blog"] = ai_blog
+    note = str(hearing.get("top_inherit_note") or "").strip()
+    if note:
+        out["top_inherit_note"] = note
+
     for page in hearing.get("pages") or []:
         if not isinstance(page, dict):
             continue

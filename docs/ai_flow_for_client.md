@@ -74,7 +74,7 @@ Every draft run builds a **prompt stack**. The model receives:
 
 Appended automatically for each page write. These are the same items shown under **Advanced → header page** tabs (TOP, concept, service, greeting, menu, faq, feature, access, blog, column, reviews).
 
-**Scope (Makara / model site):**
+**Scope (model site):**
 
 - **Included:** static pages linked from the site header/nav.
 - **Excluded:** dynamic sub-pages such as individual blog posts (`/blog/i…/`), feature topics (`/feature/瞑想/` etc.), and column articles.
